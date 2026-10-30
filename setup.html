@@ -30,6 +30,9 @@
   .secret { display: block; padding: 10px; user-select: all; }
   .muted { color: var(--ink-3); font-size: 14px; }
   .hide { display: none !important; }
+  .stack label { display: grid; gap: 4px; color: var(--ink-2); font-size: 14px; font-weight: 600; }
+  select { height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+           color: var(--ink); font: inherit; }
 </style>
 </head>
 <body>
@@ -39,9 +42,12 @@
 
   <section class="step">
     <h2>1. Connect to GitHub <span class="badge" id="b1"></span></h2>
-    <p>Each device needs an access token so it can save your (encrypted) check-ins to the repo.</p>
+    <p><b>Every device you check in from needs its own token</b> (one for your phone, one for your computer).
+       It lets that device save your encrypted check-ins to the repo.</p>
     <ol>
-      <li>Open <a id="tokenLink" target="_blank" rel="noopener">GitHub → new fine-grained token</a>.</li>
+      <li>Open <a id="tokenLink" target="_blank" rel="noopener">GitHub → new fine-grained token</a>.
+        <span class="muted">On iPhone, use Safari and type <code>github.com/settings/personal-access-tokens/new</code>.
+        The GitHub app can't make tokens.</span></li>
       <li><b>Repository access:</b> Only select repositories → <b id="repoName"></b>.</li>
       <li><b>Permissions → Repository → Contents:</b> Read and write. Nothing else.</li>
       <li><b>Expiration:</b> the longest option offered. Generate it and paste it here.</li>
@@ -76,7 +82,19 @@
   </section>
 
   <section class="step">
-    <h2>3. Notification keys <span class="badge" id="b3"></span></h2>
+    <h2>3. Reminder schedule <span class="badge" id="bTz"></span></h2>
+    <p>When should the daily reminder arrive? The nudge only goes out if you haven't checked in yet.</p>
+    <div class="stack">
+      <label>Time zone <input type="text" id="tzInput" autocomplete="off" spellcheck="false"></label>
+      <label>Daily reminder <select id="time1"></select></label>
+      <label>Nudge <select id="time2"></select></label>
+      <button class="btn primary" id="tzSave">Save schedule</button>
+    </div>
+    <div class="err" id="eTz"></div>
+  </section>
+
+  <section class="step">
+    <h2>4. Notification keys <span class="badge" id="b3"></span></h2>
     <p class="muted">Do this once, ideally on a computer.</p>
     <div id="vapidMissing" class="hide">
       <p>Generates the key pair that lets your repo's reminder job send notifications to your devices.</p>
@@ -99,14 +117,14 @@
   </section>
 
   <section class="step">
-    <h2>4. Notifications on this device <span class="badge" id="b4"></span></h2>
+    <h2>5. Notifications on this device <span class="badge" id="b4"></span></h2>
     <p id="pushMsg"></p>
     <button class="btn primary hide" id="pushOn">Turn on notifications</button>
     <div class="err" id="e4"></div>
   </section>
 
   <section class="step">
-    <h2>5. Send a test</h2>
+    <h2>6. Send a test</h2>
     <p>Open the <a id="actionsLink" target="_blank" rel="noopener">Daily reminder workflow</a>, click <b>Run workflow</b> → <b>Run workflow</b>.
        A test notification should arrive within a minute or two.</p>
     <p class="muted">Daily reminders: <span id="times"></span>. GitHub often runs scheduled jobs 5–30 minutes late.</p>
@@ -117,7 +135,7 @@
 <script type="module">
 import { repo, repoUrl, token, checkRepoAccess, getKeyInfo, createVault, unlock, isUnlocked, forgetKey,
          readVapidPublic, writeFile, readFile, VAPID_PUBLIC, addSubscription, toB64url, fromB64url,
-         loadConfig, registerServiceWorker } from "./app.js";
+         readRepoConfig, saveSchedule, registerServiceWorker } from "./app.js";
 
 registerServiceWorker();
 const $ = (s) => document.querySelector(s);
@@ -133,7 +151,35 @@ $("#tokenLink").href = "https://github.com/settings/personal-access-tokens/new";
 $("#secretLink").href = `${repoUrl()}/settings/secrets/actions/new`;
 $("#secretList").href = `${repoUrl()}/settings/secrets/actions`;
 $("#actionsLink").href = `${repoUrl()}/actions/workflows/remind.yml`;
-loadConfig().then((c) => { $("#times").textContent = `${c.reminders.join(" and ")} (${c.timezone})`; });
+// ---- 3. schedule (reminders run on the half hour, so only :00 and :30 are offered)
+const fmtTime = (t) => new Date(`2000-01-01T${t}:00`).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const halfHours = [...Array(48)].map((_, i) => `${String(Math.floor(i / 2)).padStart(2, "0")}:${i % 2 ? "30" : "00"}`);
+$("#time1").innerHTML = halfHours.map((t) => `<option value="${t}">${fmtTime(t)}</option>`).join("");
+$("#time2").innerHTML = `<option value="">No nudge</option>` + $("#time1").innerHTML;
+const deviceTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+async function refreshSchedule() {
+  err("#eTz");
+  let c;
+  try { c = await readRepoConfig(); } catch (x) { return err("#eTz", x); }
+  badge("#bTz", !!c.timezone, c.timezone ? "Set" : "Not set");
+  $("#tzInput").value = c.timezone || deviceTz;
+  $("#time1").value = c.reminders[0] || "21:00";
+  $("#time2").value = c.reminders[1] || "";
+  $("#times").textContent = c.timezone
+    ? `${c.reminders.map(fmtTime).join(" and ")} (${c.timezone})`
+    : "not scheduled yet. Finish step 3.";
+}
+$("#tzSave").addEventListener("click", (e) => busy(e.target, async () => {
+  err("#eTz");
+  const tz = $("#tzInput").value.trim(), t1 = $("#time1").value, t2 = $("#time2").value;
+  try { new Intl.DateTimeFormat("en", { timeZone: tz }); }
+  catch { return err("#eTz", `"${tz}" isn't a time zone name. Use one like America/Denver or Europe/London.`); }
+  if (t2 && t2 <= t1) return err("#eTz", "The nudge should be later than the daily reminder.");
+  try { await saveSchedule(tz, t2 ? [t1, t2] : [t1]); toast("Schedule saved"); }
+  catch (x) { err("#eTz", x); }
+  await refreshSchedule();
+}));
 
 // ---- 1. token
 async function refreshToken() {
@@ -238,7 +284,7 @@ async function refreshPush() {
     btn.textContent = "Re-register this device";
   } else {
     badge("#b4", false, "Off");
-    $("#pushMsg").textContent = vapidPublic ? "Turn on notifications, then allow them when asked." : "Finish step 3 first.";
+    $("#pushMsg").textContent = vapidPublic ? "Turn on notifications, then allow them when asked." : "Finish step 4 first.";
     btn.textContent = "Turn on notifications";
   }
   show("#pushOn", !!vapidPublic && !!token.get());
@@ -263,7 +309,7 @@ $("#pushOn").addEventListener("click", async (e) => {
 
 async function refreshAll() {
   await refreshToken();
-  await Promise.all([refreshPass(), refreshVapid(false)]);
+  await Promise.all([refreshPass(), refreshVapid(false), refreshSchedule()]);
   refreshPush().catch((x) => err("#e4", x));
 }
 refreshAll();

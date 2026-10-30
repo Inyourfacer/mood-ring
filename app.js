@@ -84,6 +84,12 @@ async function failure(r) {
 export async function checkRepoAccess() {
   const r = await gh("");
   if (!r.ok) throw await failure(r);
+  // Probe write access without committing anything: an empty PUT fails validation (422) when the
+  // token may write, but is refused (403/404) when it can only read.
+  const w = await gh("/contents/.write-check", { method: "PUT", body: "{}" });
+  if (w.status === 403 || w.status === 404) {
+    throw new Error(`This token can't save to ${repo.name}. Make a new token that includes this repository, with Repository permissions → Contents: Read and write.`);
+  }
   return r.json();
 }
 
@@ -277,6 +283,16 @@ export async function addSubscription(sub) {
     ...(list || []).filter((x) => x.endpoint !== s.endpoint),
     { endpoint: s.endpoint, keys: s.keys, added: new Date().toISOString() },
   ]);
+}
+
+// Reads the committed config (not the Pages copy, which can lag a minute behind) and updates the schedule.
+export async function readRepoConfig() {
+  const f = await readFile("config.json");
+  return f ? JSON.parse(f.text) : loadConfig();
+}
+
+export async function saveSchedule(timezone, reminders) {
+  return updateJSON("config.json", "Set reminder schedule", (cfg) => ({ ...cfg, timezone, reminders }));
 }
 
 export const repoUrl = () => `https://github.com/${repo.owner}/${repo.name}`;

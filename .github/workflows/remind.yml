@@ -2,13 +2,10 @@ name: Daily reminder
 
 on:
   schedule:
-    # Cron times are UTC. Each reminder in config.json needs two lines: one for daylight saving
-    # time and one for standard time. scripts/remind.mjs sends only on the one that matches.
-    # America/Denver is UTC-6 in summer (MDT) and UTC-7 in winter (MST).
-    - cron: "0 3 * * *"   # 21:00 MDT
-    - cron: "0 4 * * *"   # 21:00 MST
-    - cron: "30 4 * * *"  # 22:30 MDT
-    - cron: "30 5 * * *"  # 22:30 MST
+    # Checks every half hour. scripts/remind.mjs only sends when the slot matches a reminder
+    # time in config.json (in your time zone), so you never need to edit these lines.
+    - cron: "0 * * * *"
+    - cron: "30 * * * *"
   workflow_dispatch: # "Run workflow" button = send a test notification now
 
 permissions:
@@ -16,6 +13,8 @@ permissions:
 
 jobs:
   remind:
+    # The template repo itself has no devices, so don't run there.
+    if: ${{ !github.event.repository.is_template }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -25,9 +24,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --no-audit --no-fund
-      - run: node scripts/remind.mjs
+      - id: check
+        run: node scripts/remind.mjs check
         env:
-          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           EVENT: ${{ github.event_name }}
           SCHEDULE: ${{ github.event.schedule }}
+      - if: steps.check.outputs.send == 'true'
+        run: npm install --no-audit --no-fund
+      - if: steps.check.outputs.send == 'true'
+        run: node scripts/remind.mjs send
+        env:
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          MESSAGE: ${{ steps.check.outputs.message }}
