@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Check-in">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="stylesheet" href="common.css">
+<title>Check-in Setup</title>
+<style>
+  body { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  main { max-width: 640px; margin: 0 auto; padding: 20px 16px 48px; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 4px; }
+  h1 { margin: 0; font-size: 26px; }
+  .sub { color: var(--ink-2); margin: 4px 0 20px; }
+  .step { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 12px; }
+  .step h2 { font-size: 17px; margin: 0 0 6px; display: flex; gap: 8px; align-items: center; }
+  .step p, .step li { color: var(--ink-2); margin: 6px 0; }
+  .step ol { padding-left: 20px; margin: 8px 0; }
+  .badge { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--chip); color: var(--ink-2); }
+  .badge.ok { background: color-mix(in srgb, var(--good) 18%, transparent); color: var(--good); }
+  .row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .row input { flex: 1; min-width: 200px; }
+  .stack { display: grid; gap: 8px; margin-top: 8px; }
+  code, .secret { background: var(--bg); border: 1px solid var(--line); padding: 2px 6px; border-radius: 6px; color: var(--ink);
+                  word-break: break-all; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 14px; }
+  .secret { display: block; padding: 10px; user-select: all; }
+  .muted { color: var(--ink-3); font-size: 14px; }
+  .hide { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>Setup</h1><a class="btn" href="./">Done</a></header>
+  <p class="sub" id="repoLine"></p>
+
+  <section class="step">
+    <h2>1. Connect to GitHub <span class="badge" id="b1"></span></h2>
+    <p>Each device needs an access token so it can save your (encrypted) check-ins to the repo.</p>
+    <ol>
+      <li>Open <a id="tokenLink" target="_blank" rel="noopener">GitHub → new fine-grained token</a>.</li>
+      <li><b>Repository access:</b> Only select repositories → <b id="repoName"></b>.</li>
+      <li><b>Permissions → Repository → Contents:</b> Read and write. Nothing else.</li>
+      <li><b>Expiration:</b> the longest option offered. Generate it and paste it here.</li>
+    </ol>
+    <div class="row"><input type="password" id="tokenInput" placeholder="github_pat_…" autocomplete="off">
+      <button class="btn primary" id="tokenSave">Save</button></div>
+    <div class="err" id="e1"></div>
+    <div class="row hide" id="tokenDone"><button class="btn" id="tokenClear">Remove token from this device</button></div>
+  </section>
+
+  <section class="step">
+    <h2>2. Passphrase <span class="badge" id="b2"></span></h2>
+    <div id="createPass" class="hide">
+      <p>This passphrase encrypts everything. <b>If you lose it, nobody can recover your data.</b> Save it in your password manager.
+         Use four or more random words, e.g. <i>copper-violin-harbor-mitten</i>.</p>
+      <div class="stack">
+        <input type="password" id="pass1" placeholder="New passphrase" autocomplete="new-password">
+        <input type="password" id="pass2" placeholder="Type it again" autocomplete="new-password">
+        <button class="btn primary" id="passCreate">Create passphrase</button>
+      </div>
+    </div>
+    <div id="unlockPass" class="hide">
+      <p>Enter your passphrase once on this device. It stays remembered here.</p>
+      <div class="row"><input type="password" id="passUnlock" placeholder="Passphrase" autocomplete="current-password">
+        <button class="btn primary" id="passUnlockBtn">Unlock</button></div>
+    </div>
+    <div id="passDone" class="hide">
+      <p>Unlocked on this device.</p>
+      <div class="row"><button class="btn" id="passForget">Forget on this device</button></div>
+    </div>
+    <div class="err" id="e2"></div>
+  </section>
+
+  <section class="step">
+    <h2>3. Notification keys <span class="badge" id="b3"></span></h2>
+    <p class="muted">Do this once, ideally on a computer.</p>
+    <div id="vapidMissing" class="hide">
+      <p>Generates the key pair that lets your repo's reminder job send notifications to your devices.</p>
+      <button class="btn primary" id="vapidGen">Generate keys</button>
+    </div>
+    <div id="vapidShow" class="hide">
+      <p><b>Copy this private key now.</b> It's shown only once and is never saved anywhere else.</p>
+      <span class="secret" id="vapidPriv"></span>
+      <div class="row"><button class="btn" id="vapidCopy">Copy</button></div>
+      <ol>
+        <li>Open <a id="secretLink" target="_blank" rel="noopener">repo Settings → Secrets → Actions → New secret</a>.</li>
+        <li>Name: <code>VAPID_PRIVATE_KEY</code>. Value: paste the key. Click <b>Add secret</b>.</li>
+      </ol>
+    </div>
+    <div id="vapidDone" class="hide">
+      <p>Keys exist. Make sure the <code>VAPID_PRIVATE_KEY</code> secret is set in <a id="secretList" target="_blank" rel="noopener">repo secrets</a>.</p>
+      <p class="muted">Lost the private key? <a href="#" id="vapidRegen">Generate new keys</a>, update the secret, then turn notifications on again on each device.</p>
+    </div>
+    <div class="err" id="e3"></div>
+  </section>
+
+  <section class="step">
+    <h2>4. Notifications on this device <span class="badge" id="b4"></span></h2>
+    <p id="pushMsg"></p>
+    <button class="btn primary hide" id="pushOn">Turn on notifications</button>
+    <div class="err" id="e4"></div>
+  </section>
+
+  <section class="step">
+    <h2>5. Send a test</h2>
+    <p>Open the <a id="actionsLink" target="_blank" rel="noopener">Daily reminder workflow</a>, click <b>Run workflow</b> → <b>Run workflow</b>.
+       A test notification should arrive within a minute or two.</p>
+    <p class="muted">Daily reminders: <span id="times"></span>. GitHub often runs scheduled jobs 5–30 minutes late.</p>
+  </section>
+</main>
+<div class="toast" id="toast" role="status"></div>
+
+<script type="module">
+import { repo, repoUrl, token, checkRepoAccess, getKeyInfo, createVault, unlock, isUnlocked, forgetKey,
+         readVapidPublic, writeFile, readFile, VAPID_PUBLIC, addSubscription, toB64url, fromB64url,
+         loadConfig, registerServiceWorker } from "./app.js";
+
+registerServiceWorker();
+const $ = (s) => document.querySelector(s);
+const show = (id, on) => $(id).classList.toggle("hide", !on);
+const badge = (id, ok, text) => { $(id).textContent = text; $(id).classList.toggle("ok", ok); };
+const err = (id, e) => { $(id).textContent = e ? (e.message || e) : ""; };
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 2200); }
+async function busy(btn, fn) { btn.disabled = true; try { await fn(); } finally { btn.disabled = false; } }
+
+$("#repoLine").textContent = `Repo: ${repo.owner}/${repo.name}`;
+$("#repoName").textContent = repo.name;
+$("#tokenLink").href = "https://github.com/settings/personal-access-tokens/new";
+$("#secretLink").href = `${repoUrl()}/settings/secrets/actions/new`;
+$("#secretList").href = `${repoUrl()}/settings/secrets/actions`;
+$("#actionsLink").href = `${repoUrl()}/actions/workflows/remind.yml`;
+loadConfig().then((c) => { $("#times").textContent = `${c.reminders.join(" and ")} (${c.timezone})`; });
+
+// ---- 1. token
+async function refreshToken() {
+  const has = !!token.get();
+  badge("#b1", has, has ? "Connected" : "Not connected");
+  show("#tokenDone", has);
+  $("#tokenInput").placeholder = has ? "Saved. Paste a new one to replace it" : "github_pat_…";
+}
+$("#tokenSave").addEventListener("click", (e) => busy(e.target, async () => {
+  err("#e1");
+  const v = $("#tokenInput").value.trim();
+  if (!v) return err("#e1", "Paste the token first.");
+  const old = token.get();
+  token.set(v);
+  try { await checkRepoAccess(); $("#tokenInput").value = ""; toast("Token saved"); }
+  catch (x) { old ? token.set(old) : token.clear(); err("#e1", x); }
+  await refreshAll();
+}));
+$("#tokenClear").addEventListener("click", async () => { token.clear(); await refreshAll(); });
+
+// ---- 2. passphrase
+async function refreshPass() {
+  err("#e2");
+  let info = null;
+  try { info = await getKeyInfo(); } catch (x) { err("#e2", x); }
+  const unlocked = info && await isUnlocked();
+  badge("#b2", !!unlocked, unlocked ? "Unlocked" : info ? "Locked" : "Not created");
+  show("#createPass", !info);
+  show("#unlockPass", info && !unlocked);
+  show("#passDone", !!unlocked);
+}
+$("#passCreate").addEventListener("click", (e) => busy(e.target, async () => {
+  err("#e2");
+  const a = $("#pass1").value, b = $("#pass2").value;
+  if (a !== b) return err("#e2", "The two passphrases don't match.");
+  if (a.length < 12) return err("#e2", "Use at least 12 characters. Four random words is ideal.");
+  try { e.target.textContent = "Creating…"; await createVault(a); $("#pass1").value = $("#pass2").value = ""; toast("Passphrase created"); }
+  catch (x) { err("#e2", x); }
+  e.target.textContent = "Create passphrase";
+  await refreshPass();
+}));
+$("#passUnlockBtn").addEventListener("click", (e) => busy(e.target, async () => {
+  err("#e2");
+  try { await unlock($("#passUnlock").value); $("#passUnlock").value = ""; toast("Unlocked"); }
+  catch (x) { err("#e2", x); }
+  await refreshPass();
+}));
+$("#passForget").addEventListener("click", async () => { await forgetKey(); await refreshPass(); });
+
+// ---- 3. VAPID keys (generated in this browser; the private half is shown once and never uploaded)
+let vapidPublic = null;
+async function refreshVapid(justMade) {
+  err("#e3");
+  try { vapidPublic = await readVapidPublic(); } catch (x) { err("#e3", x); }
+  badge("#b3", !!vapidPublic, vapidPublic ? "Created" : "Not created");
+  show("#vapidMissing", !vapidPublic);
+  show("#vapidShow", !!justMade);
+  show("#vapidDone", !!vapidPublic && !justMade);
+}
+async function generateVapid() {
+  const kp = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+  const pub = toB64url(new Uint8Array(await crypto.subtle.exportKey("raw", kp.publicKey)));
+  const priv = (await crypto.subtle.exportKey("jwk", kp.privateKey)).d;
+  const existing = await readFile(VAPID_PUBLIC);
+  await writeFile(VAPID_PUBLIC, pub + "\n", "Set notification public key", existing?.sha);
+  $("#vapidPriv").textContent = priv;
+  await refreshVapid(true);
+  refreshPush().catch((x) => err("#e4", x));
+}
+$("#vapidGen").addEventListener("click", (e) => busy(e.target, () => generateVapid().catch((x) => err("#e3", x))));
+$("#vapidRegen").addEventListener("click", (e) => {
+  e.preventDefault();
+  if (confirm("Generate new keys? Notifications stop until you update the secret and turn them on again on each device.")) generateVapid().catch((x) => err("#e3", x));
+});
+$("#vapidCopy").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText($("#vapidPriv").textContent); toast("Copied"); }
+  catch { toast("Select the key and copy it manually"); }
+});
+
+// ---- 4. push on this device
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+const standalone = navigator.standalone || matchMedia("(display-mode: standalone)").matches;
+async function refreshPush() {
+  err("#e4");
+  const btn = $("#pushOn");
+  show("#pushOn", false);
+  if (isIOS && !standalone) {
+    badge("#b4", false, "Needs Home Screen");
+    $("#pushMsg").innerHTML = "On iPhone, notifications only work from the Home Screen app. In Safari tap <b>Share → Add to Home Screen</b>, open <b>Check-in</b> from your Home Screen, and come back to this Setup page.";
+    return;
+  }
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+    badge("#b4", false, "Unsupported");
+    $("#pushMsg").textContent = "This browser can't receive web notifications. Set this up on your iPhone (iOS 16.4 or newer).";
+    return;
+  }
+  const reg = await navigator.serviceWorker.getRegistration();
+  const sub = reg && await reg.pushManager.getSubscription();
+  if (sub && Notification.permission === "granted") {
+    badge("#b4", true, "On");
+    $("#pushMsg").textContent = "This device will get the daily reminder. If it ever stops, tap the button to re-register.";
+    btn.textContent = "Re-register this device";
+  } else {
+    badge("#b4", false, "Off");
+    $("#pushMsg").textContent = vapidPublic ? "Turn on notifications, then allow them when asked." : "Finish step 3 first.";
+    btn.textContent = "Turn on notifications";
+  }
+  show("#pushOn", !!vapidPublic && !!token.get());
+}
+$("#pushOn").addEventListener("click", async (e) => {
+  err("#e4");
+  // Must be the first await so iOS treats it as a direct response to the tap.
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") return err("#e4", "Notifications were not allowed. Turn them on in iPhone Settings → Notifications → Check-in.");
+  await busy(e.target, async () => {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const old = await reg.pushManager.getSubscription();
+      if (old) await old.unsubscribe();
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromB64url(vapidPublic) });
+      await addSubscription(sub);
+      toast("Notifications on");
+    } catch (x) { err("#e4", x); }
+  });
+  await refreshPush();
+});
+
+async function refreshAll() {
+  await refreshToken();
+  await Promise.all([refreshPass(), refreshVapid(false)]);
+  refreshPush().catch((x) => err("#e4", x));
+}
+refreshAll();
+</script>
+</body>
+</html>

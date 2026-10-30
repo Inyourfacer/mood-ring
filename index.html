@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Check-in">
+<meta name="theme-color" content="#2a78d6">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="stylesheet" href="common.css">
+<title>Daily Check-in</title>
+<style>
+  body { padding: env(safe-area-inset-top) 0 calc(96px + env(safe-area-inset-bottom)); }
+  main { max-width: 560px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0 16px; }
+  h1 { font-size: 26px; margin: 0; letter-spacing: -0.01em; }
+  .date-nav { display: flex; align-items: center; gap: 4px; }
+  .date-nav button, .icon-btn { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line);
+       background: var(--card); color: var(--ink); font-size: 18px; display: inline-flex; align-items: center;
+       justify-content: center; text-decoration: none; }
+  .date-nav span { min-width: 96px; text-align: center; font-weight: 600; font-size: 15px; }
+  .status { color: var(--ink-2); font-size: 14px; margin: -8px 0 16px; min-height: 1em; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin: 24px 4px 8px; font-weight: 600; }
+  .q { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 10px; }
+  .q .title { display: block; font-weight: 600; margin-bottom: 10px; }
+  .scale { display: grid; gap: 6px; }
+  .scale button, .chips button { border: 1px solid var(--line); background: var(--chip); color: var(--ink);
+       border-radius: 10px; font: inherit; font-weight: 600; }
+  .scale button { height: 44px; }
+  .scale button.on, .chips button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .ends { display: flex; justify-content: space-between; color: var(--ink-3); font-size: 12px; margin-top: 6px; }
+  .num { display: flex; align-items: center; gap: 10px; }
+  .num button { width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line);
+                background: var(--chip); color: var(--ink); font-size: 22px; }
+  .num input { flex: 1; min-width: 0; height: 44px; text-align: center; font: 600 20px/1 inherit; font-family: inherit;
+               border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--ink); }
+  .num .unit { color: var(--ink-2); min-width: 52px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chips button { padding: 9px 12px; font-weight: 500; }
+  textarea { width: 100%; min-height: 96px; border: 1px solid var(--line); border-radius: 12px; padding: 10px;
+             background: var(--bg); color: var(--ink); font: inherit; resize: vertical; }
+  .yesno { grid-template-columns: 1fr 1fr; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+         background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px);
+         -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--line); }
+  .bar .inner { max-width: 560px; margin: 0 auto; display: flex; gap: 10px; }
+  .bar .btn { height: 52px; border-radius: 14px; }
+  .save { flex: 1; font-size: 17px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Check-in</h1>
+    <div class="date-nav">
+      <button id="prev" aria-label="Previous day">‹</button>
+      <span id="dateLabel"></span>
+      <button id="next" aria-label="Next day">›</button>
+      <a class="icon-btn" href="setup.html" aria-label="Setup" title="Setup">⚙</a>
+    </div>
+  </header>
+  <div class="status" id="status"></div>
+  <div id="form"><div class="loading">Loading…</div></div>
+</main>
+<div class="bar"><div class="inner">
+  <a class="btn" href="dashboard.html">Dashboard</a>
+  <button class="btn primary save" id="save" disabled>Save check-in</button>
+</div></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script type="module">
+import { loadConfig, logicalToday, ymd, token, requireKey, loadEntries, saveEntry, registerServiceWorker } from "./app.js";
+
+registerServiceWorker();
+const $ = (s) => document.querySelector(s);
+let questions = [], today, date, answers = {}, entries = {}, key;
+
+const shift = (d, n) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() + n); return ymd(x); };
+function pretty(d) {
+  if (d === today) return "Today";
+  if (d === shift(today, -1)) return "Yesterday";
+  return new Date(d + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  Object.entries(attrs).forEach(([k, v]) => k.startsWith("on") ? e.addEventListener(k.slice(2), v) : e.setAttribute(k, v));
+  kids.forEach((k) => e.append(k));
+  return e;
+}
+
+function render() {
+  const form = $("#form"); form.innerHTML = "";
+  let section = null;
+  for (const q of questions) {
+    if (q.section !== section) { section = q.section; form.append(el("h2", {}, section)); }
+    const box = el("div", { class: "q" }, el("span", { class: "title" }, q.label));
+    const v = answers[q.id];
+
+    if (q.type === "scale") {
+      const n = q.max - q.min + 1, grid = el("div", { class: "scale" });
+      grid.style.gridTemplateColumns = `repeat(${n > 5 ? Math.ceil(n / 2) : n}, 1fr)`;
+      for (let i = q.min; i <= q.max; i++) {
+        grid.append(el("button", { type: "button", class: v === i ? "on" : "", onclick: () => {
+          answers[q.id] = answers[q.id] === i ? undefined : i; render(); } }, String(i)));
+      }
+      box.append(grid, el("div", { class: "ends" }, el("span", {}, q.low || ""), el("span", {}, q.high || "")));
+    } else if (q.type === "number") {
+      const input = el("input", { type: "number", inputmode: "decimal", step: q.step || 1, min: q.min ?? 0,
+        max: q.max ?? "", placeholder: q.default ?? "", "aria-label": q.label });
+      input.value = v ?? "";
+      input.addEventListener("input", () => { answers[q.id] = input.value === "" ? undefined : Number(input.value); });
+      const bump = (d) => {
+        const cur = answers[q.id] ?? q.default ?? 0;
+        let nv = Math.round((cur + d * (q.step || 1)) * 100) / 100;
+        nv = Math.max(q.min ?? 0, q.max != null ? Math.min(q.max, nv) : nv);
+        answers[q.id] = nv; input.value = nv;
+      };
+      box.append(el("div", { class: "num" },
+        el("button", { type: "button", "aria-label": "Decrease", onclick: () => bump(-1) }, "−"), input,
+        el("button", { type: "button", "aria-label": "Increase", onclick: () => bump(1) }, "+"),
+        el("span", { class: "unit" }, q.unit || "")));
+    } else if (q.type === "tags") {
+      const set = new Set(v || []), chips = el("div", { class: "chips" });
+      for (const opt of q.options) chips.append(el("button", { type: "button", class: set.has(opt) ? "on" : "",
+        onclick: () => { set.has(opt) ? set.delete(opt) : set.add(opt); answers[q.id] = [...set]; render(); } }, opt));
+      box.append(chips);
+    } else if (q.type === "yesno") {
+      const yn = el("div", { class: "scale yesno" });
+      [["Yes", true], ["No", false]].forEach(([t, b]) => yn.append(el("button", { type: "button",
+        class: v === b ? "on" : "", onclick: () => { answers[q.id] = v === b ? undefined : b; render(); } }, t)));
+      box.append(yn);
+    } else {
+      const ta = el("textarea", { placeholder: "Optional", "aria-label": q.label }); ta.value = v || "";
+      ta.addEventListener("input", () => { answers[q.id] = ta.value; });
+      box.append(ta);
+    }
+    form.append(box);
+  }
+}
+
+function show(d) {
+  date = d;
+  history.replaceState(null, "", d === today ? location.pathname : `?date=${d}`);
+  $("#dateLabel").textContent = pretty(d);
+  $("#next").disabled = d >= today;
+  const existing = entries[d];
+  answers = structuredClone(existing?.answers || {});
+  $("#status").textContent = existing ? "Already logged. Saving will update it." : "";
+  $("#save").textContent = existing ? "Update check-in" : "Save check-in";
+  render();
+}
+
+function toast(msg, ms = 2200) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), ms);
+}
+
+$("#save").addEventListener("click", async () => {
+  const clean = Object.fromEntries(Object.entries(answers).filter(([, v]) => v !== undefined && v !== ""));
+  $("#save").disabled = true; $("#save").textContent = "Saving…";
+  try {
+    entries = await saveEntry(key, date, clean);
+    toast("Saved ✓");
+    $("#status").textContent = "Logged. Nice work.";
+  } catch (e) { toast(e.message, 5000); }
+  $("#save").disabled = false;
+  $("#save").textContent = entries[date] ? "Update check-in" : "Save check-in";
+});
+$("#prev").addEventListener("click", () => show(shift(date, -1)));
+$("#next").addEventListener("click", () => show(shift(date, 1)));
+
+(async () => {
+  try {
+    const cfg = await loadConfig();
+    questions = cfg.questions; today = logicalToday(cfg);
+    key = await requireKey();
+    if (!key || !token.get()) {
+      $("#form").innerHTML = `<div class="banner">This device isn't set up yet. <a href="setup.html">Open Setup</a> to connect it.</div>`;
+      return;
+    }
+    entries = await loadEntries(key);
+    $("#save").disabled = false;
+    show(new URLSearchParams(location.search).get("date") || today);
+  } catch (e) {
+    $("#form").innerHTML = "";
+    $("#form").append(Object.assign(document.createElement("div"), { className: "banner", textContent: e.message }));
+  }
+})();
+</script>
+</body>
+</html>

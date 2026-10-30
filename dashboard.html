@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.json">
+<title>Health Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="stylesheet" href="common.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 1180px; margin: 0 auto; padding: 16px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; justify-content: space-between; margin: 8px 0 20px; }
+  h1 { font-size: 26px; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin: 28px 0 10px; font-weight: 600; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .seg { display: inline-flex; background: var(--chip); border-radius: 10px; padding: 3px; }
+  .seg button { border: 0; background: transparent; color: var(--ink-2); font: inherit; font-weight: 600;
+                padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+  .seg button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .btn { border: 1px solid var(--line); background: var(--card); color: var(--ink); text-decoration: none;
+         padding: 7px 12px; border-radius: 10px; font-weight: 600; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+  .tile, .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .tile .k { color: var(--ink-2); font-size: 13px; }
+  .tile .v { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .tile .s { color: var(--ink-3); font-size: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
+  @media (max-width: 400px) { .grid { grid-template-columns: 1fr; } }
+  .card h3 { margin: 0; font-size: 15px; }
+  .card .meta { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+  .card .avg { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .card .delta { color: var(--ink-2); font-size: 12px; text-align: right; }
+  .card .chart { position: relative; height: 150px; }
+  .key { display: flex; gap: 14px; color: var(--ink-3); font-size: 12px; margin-top: 6px; }
+  .key i { display: inline-block; vertical-align: middle; margin-right: 5px; }
+  .key .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); opacity: .45; }
+  .key .ln { width: 16px; height: 2px; background: var(--accent); border-radius: 2px; }
+  .heat-wrap { overflow-x: auto; }
+  .heat { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 14px); gap: 3px; width: max-content; }
+  .heat div { width: 14px; height: 14px; border-radius: 3px; background: var(--seq-0); }
+  .heat div.out { background: transparent; }
+  .legend-seq { display: flex; align-items: center; gap: 3px; color: var(--ink-3); font-size: 12px; margin-top: 10px; }
+  .legend-seq span { width: 14px; height: 14px; border-radius: 3px; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--ink-3); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  td.n { text-align: right; } th.n { text-align: right; }
+  .bar-cell { display: flex; align-items: center; gap: 8px; }
+  .bar-cell .b { height: 8px; border-radius: 0 4px 4px 0; background: var(--accent); }
+  .notes { display: grid; gap: 8px; }
+  .note { border-left: 2px solid var(--line); padding: 2px 0 2px 12px; }
+  .note .d { color: var(--ink-3); font-size: 12px; }
+  .empty { color: var(--ink-2); padding: 40px 0; text-align: center; }
+  details summary { cursor: pointer; color: var(--ink-2); font-weight: 600; }
+  .scroll { overflow-x: auto; }
+  #tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--bg); padding: 6px 9px;
+         border-radius: 8px; font-size: 12px; opacity: 0; transition: opacity .1s; z-index: 10; white-space: nowrap; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Health Dashboard</h1>
+    <div class="controls">
+      <div class="seg" id="range">
+        <button data-d="14">14d</button><button data-d="30" class="on">30d</button>
+        <button data-d="90">90d</button><button data-d="365">1y</button><button data-d="0">All</button>
+      </div>
+      <button class="btn" id="export">Export CSV</button>
+      <a class="btn" href="setup.html">Setup</a>
+      <a class="btn primary" href="./">Check in</a>
+    </div>
+  </header>
+  <div id="app"></div>
+</main>
+<div id="tip"></div>
+
+<script type="module">
+import { loadConfig, logicalToday, requireKey, loadEntries, registerServiceWorker } from "./app.js";
+registerServiceWorker();
+const $ = (s) => document.querySelector(s);
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+let data, rangeDays = 30, charts = [];
+
+const dayStr = (d) => { const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset()); return x.toISOString().slice(0, 10); };
+const addDays = (s, n) => { const x = new Date(s + "T12:00:00"); x.setDate(x.getDate() + n); return dayStr(x); };
+const fmtDate = (s, opts = { month: "short", day: "numeric" }) => new Date(s + "T12:00:00").toLocaleDateString(undefined, opts);
+const mean = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+const r1 = (x) => x == null ? "–" : (Math.round(x * 10) / 10).toString();
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function daysBetween(from, to) { const out = []; for (let d = from; d <= to; d = addDays(d, 1)) out.push(d); return out; }
+
+function streak(byDate, today) {
+  let d = byDate[today] ? today : addDays(today, -1), n = 0;
+  while (byDate[d]) { n++; d = addDays(d, -1); }
+  return n;
+}
+
+function render() {
+  charts.forEach(c => c.destroy()); charts = [];
+  const app = $("#app");
+  const { questions, entries, today } = data;
+  if (!entries.length) {
+    app.innerHTML = `<div class="empty">No check-ins yet. <a href="./">Log your first one</a>.</div>`;
+    return;
+  }
+  const byDate = Object.fromEntries(entries.map(e => [e.date, e.answers]));
+  const first = entries[0].date;
+  const from = rangeDays ? addDays(today, -(rangeDays - 1)) : first;
+  const days = daysBetween(from < first && !rangeDays ? first : from, today);
+  const prevDays = rangeDays ? daysBetween(addDays(from, -rangeDays), addDays(from, -1)) : [];
+  const inRange = days.filter(d => byDate[d]);
+  const numeric = questions.filter(q => q.type === "scale" || q.type === "number");
+  const vals = (q, ds) => ds.map(d => byDate[d]?.[q.id]).filter(v => typeof v === "number");
+
+  // --- headline tiles
+  const mood = numeric.find(q => q.id === "mood") || numeric[0];
+  const sleep = numeric.find(q => q.id === "sleep_hours");
+  let html = `<div class="tiles">
+    <div class="tile"><div class="k">Current streak</div><div class="v">${streak(byDate, today)}</div><div class="s">days in a row</div></div>
+    <div class="tile"><div class="k">Check-ins</div><div class="v">${inRange.length}<span style="font-size:16px;color:var(--ink-3)"> / ${days.length}</span></div><div class="s">${Math.round(100 * inRange.length / days.length)}% of days in range</div></div>
+    ${mood ? `<div class="tile"><div class="k">Avg ${mood.id === "mood" ? "mood" : esc(mood.label.toLowerCase())}</div><div class="v">${r1(mean(vals(mood, days)))}</div><div class="s">out of ${mood.max}</div></div>` : ""}
+    ${sleep ? `<div class="tile"><div class="k">Avg sleep</div><div class="v">${r1(mean(vals(sleep, days)))}<span style="font-size:16px;color:var(--ink-3)"> h</span></div><div class="s">per night</div></div>` : ""}
+  </div>`;
+
+  // --- trend small multiples
+  html += `<h2>Trends</h2><div class="grid">`;
+  numeric.forEach((q, i) => {
+    const cur = mean(vals(q, days)), prev = mean(vals(q, prevDays));
+    let delta = "";
+    if (cur != null && prev != null && rangeDays) {
+      const d = cur - prev, better = q.lower_is_better ? d < 0 : d > 0;
+      delta = Math.abs(d) < 0.05 ? `same as prior ${rangeDays}d`
+        : `${d > 0 ? "▲" : "▼"} ${r1(Math.abs(d))} vs prior ${rangeDays}d · ${better ? "better" : "worse"}`;
+    }
+    html += `<div class="card"><div class="meta"><div><h3>${esc(q.label)}</h3>
+      <div class="avg">${r1(cur)}<span style="font-size:13px;color:var(--ink-3);font-weight:500"> avg${q.unit ? " " + esc(q.unit) : ""}</span></div></div>
+      <div class="delta">${delta}</div></div>
+      <div class="chart"><canvas id="c${i}" aria-label="${esc(q.label)} over time" role="img"></canvas></div>
+      <div class="key"><span><i class="dot"></i>daily</span><span><i class="ln"></i>7-day average</span></div></div>`;
+  });
+  html += `</div>`;
+
+  // --- mood calendar
+  if (mood) {
+    html += `<h2>${esc(mood.label)} — calendar</h2><div class="card"><div class="heat-wrap"><div class="heat" id="heat"></div></div>
+      <div class="legend-seq">${mood.low || "Low"}&nbsp;${[1,2,3,4,5,6].map(i => `<span style="background:var(--seq-${i})"></span>`).join("")}&nbsp;${mood.high || "High"}
+      <span style="margin-left:14px;background:var(--seq-0)"></span>&nbsp;no entry</div></div>`;
+  }
+
+  // --- habits vs mood
+  const tagQ = questions.find(q => q.type === "tags");
+  if (tagQ && mood) {
+    const rows = tagQ.options.map(opt => {
+      const withT = inRange.filter(d => (byDate[d][tagQ.id] || []).includes(opt));
+      const without = inRange.filter(d => !(byDate[d][tagQ.id] || []).includes(opt));
+      const a = mean(vals(mood, withT)), b = mean(vals(mood, without));
+      return { opt, n: withT.length, a, diff: a != null && b != null ? a - b : null };
+    }).sort((x, y) => y.n - x.n);
+    const maxN = Math.max(1, ...rows.map(r => r.n));
+    html += `<h2>Habits &amp; ${esc(mood.label.toLowerCase())}</h2><div class="card scroll"><table>
+      <thead><tr><th>${esc(tagQ.section || "Habit")}</th><th>Days</th><th class="n">Avg ${esc(mood.id)} on those days</th><th class="n">Difference</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td>${esc(r.opt)}</td>
+        <td><div class="bar-cell"><div class="b" style="width:${Math.max(2, 100 * r.n / maxN)}px"></div>${r.n}</div></td>
+        <td class="n">${r1(r.a)}</td>
+        <td class="n">${r.diff == null ? "–" : (r.diff >= 0 ? "+" : "−") + r1(Math.abs(r.diff))}</td></tr>`).join("")}
+      </tbody></table><div style="color:var(--ink-3);font-size:12px;margin-top:8px">Difference = average ${esc(mood.id)} on days with the habit minus days without it. Correlation, not cause — but patterns add up.</div></div>`;
+  }
+
+  // --- notes
+  const textQ = questions.filter(q => q.type === "text");
+  const notes = inRange.slice().reverse().flatMap(d => textQ.map(q => byDate[d][q.id]).filter(Boolean).map(t => ({ d, t })));
+  if (notes.length) {
+    html += `<h2>Notes</h2><div class="card notes">${notes.slice(0, 30).map(n =>
+      `<div class="note"><div class="d">${fmtDate(n.d, { weekday: "short", month: "short", day: "numeric" })}</div>${esc(n.t)}</div>`).join("")}</div>`;
+  }
+
+  // --- raw table
+  html += `<h2>All entries in range</h2><div class="card"><details><summary>Show table (${inRange.length} days)</summary><div class="scroll"><table>
+    <thead><tr><th>Date</th>${questions.map(q => `<th>${esc(q.id)}</th>`).join("")}</tr></thead><tbody>
+    ${inRange.slice().reverse().map(d => `<tr><td><a href="./?date=${d}" style="color:var(--accent)">${d}</a></td>${questions.map(q => {
+      const v = byDate[d][q.id]; return `<td>${v == null ? "" : esc(Array.isArray(v) ? v.join(", ") : v)}</td>`; }).join("")}</tr>`).join("")}
+    </tbody></table></div></details></div>`;
+
+  app.innerHTML = html;
+
+  // draw charts
+  const accent = css("--accent"), ink3 = css("--ink-3"), grid = css("--grid"), surface = css("--card");
+  numeric.forEach((q, i) => {
+    const daily = days.map(d => byDate[d]?.[q.id] ?? null);
+    const avg = days.map((d, j) => {
+      const w = []; for (let k = Math.max(0, j - 6); k <= j; k++) { const v = byDate[days[k]]?.[q.id]; if (typeof v === "number") w.push(v); }
+      return w.length >= 3 ? Math.round(mean(w) * 100) / 100 : null;
+    });
+    charts.push(new Chart(document.getElementById("c" + i), {
+      type: "line",
+      data: { labels: days, datasets: [
+        { label: "7-day avg", data: avg, borderColor: accent, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4,
+          tension: 0.3, spanGaps: true, order: 1 },
+        { label: "Daily", data: daily, showLine: false, pointRadius: days.length > 120 ? 2 : 3.5, pointHoverRadius: 6,
+          pointBackgroundColor: accent + "73", pointBorderColor: "transparent", order: 2, clip: false },
+      ]},
+      options: {
+        maintainAspectRatio: false, animation: false, layout: { padding: { top: 6, right: 4 } },
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: false }, tooltip: {
+          backgroundColor: css("--ink"), titleColor: surface, bodyColor: surface, displayColors: false,
+          callbacks: { title: (it) => fmtDate(it[0].label, { weekday: "short", month: "short", day: "numeric" }),
+                       label: (it) => it.raw == null ? null : `${it.dataset.label}: ${r1(it.raw)}${q.unit ? " " + q.unit : ""}` } } },
+        scales: {
+          x: { grid: { display: false }, border: { color: grid }, ticks: { color: ink3, maxTicksLimit: 5, maxRotation: 0,
+               callback: function (v) { return fmtDate(this.getLabelForValue(v)); } } },
+          y: { min: q.type === "scale" ? q.min : (q.min ?? 0), max: q.type === "scale" ? q.max : undefined,
+               grid: { color: grid }, border: { display: false }, ticks: { color: ink3, maxTicksLimit: 4 } },
+        },
+      },
+    }));
+  });
+
+  // heatmap: whole weeks, Sunday-start, last 26 weeks (or range if longer)
+  if (mood) {
+    const heat = $("#heat"), weeks = Math.max(26, Math.ceil(days.length / 7));
+    let start = addDays(today, -(weeks * 7 - 1));
+    start = addDays(start, -new Date(start + "T12:00:00").getDay());
+    const tip = $("#tip");
+    for (let d = start; d <= addDays(today, 6 - new Date(today + "T12:00:00").getDay()); d = addDays(d, 1)) {
+      const cell = document.createElement("div");
+      if (d > today) cell.className = "out";
+      else {
+        const v = byDate[d]?.[mood.id];
+        if (typeof v === "number") {
+          const lvl = 1 + Math.round(5 * (v - mood.min) / (mood.max - mood.min));
+          cell.style.background = `var(--seq-${lvl})`;
+        }
+        const label = `${fmtDate(d, { weekday: "short", month: "short", day: "numeric" })}: ${typeof v === "number" ? v + " / " + mood.max : "no entry"}`;
+        cell.setAttribute("aria-label", label);
+        cell.addEventListener("mousemove", (e) => { tip.textContent = label; tip.style.opacity = 1;
+          tip.style.left = (e.clientX + 12) + "px"; tip.style.top = (e.clientY - 30) + "px"; });
+        cell.addEventListener("mouseleave", () => tip.style.opacity = 0);
+        cell.addEventListener("click", () => location.href = "./?date=" + d);
+        cell.style.cursor = "pointer";
+      }
+      heat.append(cell);
+    }
+    heat.parentElement.scrollLeft = heat.scrollWidth;
+  }
+}
+
+document.querySelectorAll("#range button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("#range button").forEach(x => x.classList.toggle("on", x === b));
+  rangeDays = Number(b.dataset.d); render();
+}));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+
+$("#app").innerHTML = `<div class="loading">Loading…</div>`;
+(async () => {
+  try {
+    const cfg = await loadConfig();
+    const key = await requireKey();
+    if (!key) { $("#app").innerHTML = `<div class="banner">Not set up yet. <a href="setup.html">Open Setup</a>.</div>`; return; }
+    const entries = await loadEntries(key);
+    data = { questions: cfg.questions, today: logicalToday(cfg),
+             entries: Object.keys(entries).sort().map(date => ({ date, answers: entries[date].answers })) };
+    render();
+  } catch (e) {
+    $("#app").innerHTML = "";
+    $("#app").append(Object.assign(document.createElement("div"), { className: "banner", textContent: e.message }));
+  }
+})();
+
+// CSV is built on this device from the decrypted data; nothing unencrypted is uploaded.
+$("#export").addEventListener("click", () => {
+  if (!data) return;
+  const cell = (v) => { v = Array.isArray(v) ? v.join("; ") : v ?? ""; return /[",\n]/.test(v) ? `"${String(v).replace(/"/g, '""')}"` : v; };
+  const rows = [["date", ...data.questions.map(q => q.id)],
+    ...data.entries.map(e => [e.date, ...data.questions.map(q => e.answers[q.id])])];
+  const blob = new Blob([rows.map(r => r.map(cell).join(",")).join("\n")], { type: "text/csv" });
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `health-log-${data.today}.csv` });
+  document.body.append(a); a.click(); a.remove();
+});
+</script>
+</body>
+</html>

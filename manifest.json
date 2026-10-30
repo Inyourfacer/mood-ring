@@ -1,0 +1,10 @@
+{
+  "name": "Daily Check-in",
+  "short_name": "Check-in",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f4f1",
+  "theme_color": "#2a78d6",
+  "icons": [{ "src": "icon.png", "sizes": "180x180", "type": "image/png" }]
+}

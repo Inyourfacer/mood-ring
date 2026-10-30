@@ -1,0 +1,139 @@
+{
+  "timezone": "America/Denver",
+  "reminders": [
+    "21:00",
+    "22:30"
+  ],
+  "day_rollover_hour": 4,
+  "questions": [
+    {
+      "id": "mood",
+      "section": "Mind",
+      "label": "Overall mood today",
+      "type": "scale",
+      "min": 1,
+      "max": 10,
+      "low": "Awful",
+      "high": "Great"
+    },
+    {
+      "id": "stress",
+      "section": "Mind",
+      "label": "Stress / anxiety",
+      "type": "scale",
+      "min": 1,
+      "max": 10,
+      "low": "Calm",
+      "high": "Overwhelmed",
+      "lower_is_better": true
+    },
+    {
+      "id": "energy",
+      "section": "Mind",
+      "label": "Energy level",
+      "type": "scale",
+      "min": 1,
+      "max": 10,
+      "low": "Drained",
+      "high": "Energized"
+    },
+    {
+      "id": "focus",
+      "section": "Mind",
+      "label": "Focus / clarity",
+      "type": "scale",
+      "min": 1,
+      "max": 10,
+      "low": "Foggy",
+      "high": "Sharp"
+    },
+    {
+      "id": "sleep_hours",
+      "section": "Body",
+      "label": "Hours slept last night",
+      "type": "number",
+      "min": 0,
+      "max": 14,
+      "step": 0.5,
+      "unit": "h",
+      "default": 7
+    },
+    {
+      "id": "sleep_quality",
+      "section": "Body",
+      "label": "Sleep quality",
+      "type": "scale",
+      "min": 1,
+      "max": 5,
+      "low": "Poor",
+      "high": "Excellent"
+    },
+    {
+      "id": "exercise_min",
+      "section": "Body",
+      "label": "Exercise",
+      "type": "number",
+      "min": 0,
+      "max": 300,
+      "step": 5,
+      "unit": "min",
+      "default": 0
+    },
+    {
+      "id": "pain",
+      "section": "Body",
+      "label": "Physical pain / discomfort",
+      "type": "scale",
+      "min": 1,
+      "max": 10,
+      "low": "None",
+      "high": "Severe",
+      "lower_is_better": true
+    },
+    {
+      "id": "water",
+      "section": "Body",
+      "label": "Glasses of water",
+      "type": "number",
+      "min": 0,
+      "max": 20,
+      "step": 1,
+      "unit": "glasses",
+      "default": 0
+    },
+    {
+      "id": "alcohol",
+      "section": "Body",
+      "label": "Alcoholic drinks",
+      "type": "number",
+      "min": 0,
+      "max": 20,
+      "step": 1,
+      "unit": "drinks",
+      "default": 0,
+      "lower_is_better": true
+    },
+    {
+      "id": "habits",
+      "section": "Today I...",
+      "label": "Check all that apply",
+      "type": "tags",
+      "options": [
+        "Meditated",
+        "Went outside",
+        "Saw friends/family",
+        "Ate well",
+        "Took meds/supplements",
+        "Screens late",
+        "Caffeine after 2pm",
+        "Worked late"
+      ]
+    },
+    {
+      "id": "notes",
+      "section": "Notes",
+      "label": "Anything worth remembering?",
+      "type": "text"
+    }
+  ]
+}
