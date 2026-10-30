@@ -1,4 +1,4 @@
-# Daily Health Check-in
+# mood-ring: Daily Health Check-in
 
 A private daily mental and physical health log that runs entirely on GitHub, with no server or computer that needs to stay on.
 
@@ -19,8 +19,8 @@ A private daily mental and physical health log that runs entirely on GitHub, wit
 ## Setup
 
 1. **Settings → Pages**: set Source to *Deploy from a branch*, Branch to `main` and `/ (root)`.
-2. Open `https://<you>.github.io/health-checkin/setup.html` on a computer and follow steps 1–3 (token, passphrase, notification keys).
-3. On the iPhone, open `https://<you>.github.io/health-checkin/` in Safari, tap **Share → Add to Home Screen**, open it from the Home Screen, then go to **⚙ Setup** and do steps 1, 2 and 4.
+2. Open `https://inyourfacer.github.io/mood-ring/setup.html` on a computer and follow steps 1–3 (token, passphrase, notification keys).
+3. On the iPhone, open `https://inyourfacer.github.io/mood-ring/` in Safari, tap **Share → Add to Home Screen**, open it from the Home Screen, then go to **⚙ Setup** and do steps 1, 2 and 4.
 4. Test it: **Actions → Daily reminder → Run workflow**.
 
 ## Changing things
