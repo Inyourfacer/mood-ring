@@ -176,9 +176,15 @@ $("#next").addEventListener("click", () => show(shift(date, 1)));
   try {
     const cfg = await loadConfig();
     questions = cfg.questions; today = logicalToday(cfg);
+    // Check the token first so nobody types their passphrase only to be told the device isn't connected.
+    if (!token.get()) {
+      $("#form").innerHTML = `<div class="banner"><b>This app isn't connected to GitHub yet.</b> <a href="setup.html">Open Setup</a> and paste your token in step 1.
+        If you already did that in Safari, do it again here: the Home Screen app keeps its own separate storage.</div>`;
+      return;
+    }
     key = await requireKey();
-    if (!key || !token.get()) {
-      $("#form").innerHTML = `<div class="banner">This device isn't set up yet. <a href="setup.html">Open Setup</a> to connect it.</div>`;
+    if (!key) {
+      $("#form").innerHTML = `<div class="banner">No passphrase has been created yet. <a href="setup.html">Open Setup</a> and do step 2.</div>`;
       return;
     }
     entries = await loadEntries(key);
