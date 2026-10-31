@@ -6,5 +6,13 @@
       "auth": "neUZmu19swprFrNhfylFDw"
     },
     "added": "2026-10-30T02:43:23.219Z"
+  },
+  {
+    "endpoint": "https://web.push.apple.com/QKdZQYDW-k4qoUYeH3bbMxGI9doHiXFZQvaKfSZa4Yqyf-rPn5JSIuHHcLXdrvxl496vbRN70n00Om7SesrgBUHznjd0r6FSCOWdG2kZIcij9j1lYrkNe89kpKI-Yod2kXRoA1Mb3suKr_Wmpqz50-ZwEnibJ1V0pGaXyVg6cx0",
+    "keys": {
+      "p256dh": "BIV59oM6O3l4nuLJogMS9n23vTN2FZl3N5Rr6XiT1LBmOsVMrL16XbgLysBjLEJY22fYWDhQyedsZYM_rbZqBP0",
+      "auth": "7gvBdF_umzNWYrI7tgPGEw"
+    },
+    "added": "2026-10-31T03:10:43.066Z"
   }
 ]
