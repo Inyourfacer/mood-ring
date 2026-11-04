@@ -291,8 +291,8 @@ export async function readRepoConfig() {
   return f ? JSON.parse(f.text) : loadConfig();
 }
 
-export async function saveSchedule(timezone, reminders) {
-  return updateJSON("config.json", "Set reminder schedule", (cfg) => ({ ...cfg, timezone, reminders }));
+export async function saveSchedule(timezone, reminder_window) {
+  return updateJSON("config.json", "Set reminder schedule", (cfg) => ({ ...cfg, timezone, reminder_window }));
 }
 
 export const repoUrl = () => `https://github.com/${repo.owner}/${repo.name}`;

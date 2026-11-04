@@ -1,11 +1,11 @@
-// Check-in reminders, run by .github/workflows/remind.yml every half hour.
+// Check-in reminders, run by .github/workflows/remind.yml.
 //
 //   node scripts/remind.mjs check   decides whether this run should notify (fast, no dependencies)
 //   node scripts/remind.mjs send    sends the notification chosen by "check" to every device
 //
-// The workflow fires at :00 and :30 UTC. "check" works out which half-hour slot triggered it
-// (even if GitHub started the job late), converts that to your time zone, and only sends when
-// it matches a reminder time in config.json. Reminder times must therefore end in :00 or :30.
+// GitHub starts scheduled jobs irregularly, so reminders aren't tied to an exact time. The first
+// run inside reminder_window (config.json, your time zone) sends one reminder, unless you've
+// already checked in. push/last-reminder.txt records the day so later runs don't send it again.
 import fs from "node:fs";
 import { execFileSync } from "node:child_process";
 
@@ -33,35 +33,24 @@ function checkedInToday() {
   return subjects.split("\n").includes(`Check-in for ${logicalToday()}`);
 }
 
-// The most recent UTC time at or before now whose minute matches the cron line ("0 * * * *" or "30 * * * *").
-function slotFor(schedule) {
-  const minute = Number(schedule.split(" ")[0]);
-  const slot = new Date(now);
-  slot.setUTCSeconds(0, 0);
-  slot.setUTCMinutes(minute);
-  if (slot > now) slot.setUTCHours(slot.getUTCHours() - 1);
-  return slot;
-}
-
 function decide() {
   if ((process.env.EVENT || "workflow_dispatch") !== "schedule") {
     return { title: "Test notification", body: "Reminders are working. Tap to open your check-in." };
   }
   if (!cfg.timezone) return console.log("No time zone set yet. Open the Setup page, step 3."), null;
-  const slotLocal = local(slotFor(process.env.SCHEDULE || "0 * * * *")).time;
-  const index = cfg.reminders.indexOf(slotLocal);
-  if (index === -1) return console.log(`${slotLocal} in ${cfg.timezone} isn't a reminder time.`), null;
-  if (checkedInToday()) return console.log(`Already checked in for ${logicalToday()}. Skipping the ${slotLocal} reminder.`), null;
-  return index === 0
-    ? { title: "Daily health check-in", body: "How was today? Tap to log it." }
-    : { title: "Still time to check in", body: "You haven't logged today yet. Takes a minute." };
+  const { start, end } = cfg.reminder_window || { start: "17:00", end: "22:00" };
+  const time = local(now).time, day = logicalToday();
+  if (time < start || time >= end) return console.log(`${time} in ${cfg.timezone} is outside the ${start}-${end} window.`), null;
+  if (readOr("push/last-reminder.txt", "").trim() === day) return console.log(`Already reminded for ${day}.`), null;
+  if (checkedInToday()) return console.log(`Already checked in for ${day}.`), null;
+  return { title: "Daily health check-in", body: "How was today? Tap to log it.", day };
 }
 
 if (mode === "check") {
   const message = decide();
   const out = process.env.GITHUB_OUTPUT;
   if (message) console.log(`Will send: ${message.title}`);
-  if (out) fs.appendFileSync(out, `send=${!!message}\nmessage=${JSON.stringify(message)}\n`);
+  if (out) fs.appendFileSync(out, `send=${!!message}\nday=${message?.day || ""}\nmessage=${JSON.stringify(message)}\n`);
   process.exit(0);
 }
 
@@ -84,7 +73,7 @@ const [owner, repo] = (process.env.GITHUB_REPOSITORY || "owner/repo").split("/")
 const appUrl = `https://${owner.toLowerCase()}.github.io/${repo}/`;
 webpush.setVapidDetails(appUrl, publicKey, process.env.VAPID_PRIVATE_KEY);
 
-const payload = JSON.stringify({ ...message, url: appUrl });
+const payload = JSON.stringify({ title: message.title, body: message.body, url: appUrl });
 let ok = 0;
 for (const sub of subs) {
   const host = new URL(sub.endpoint).host;

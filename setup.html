@@ -83,11 +83,12 @@
 
   <section class="step">
     <h2>3. Reminder schedule <span class="badge" id="bTz"></span></h2>
-    <p>When should the daily reminder arrive? The nudge only goes out if you haven't checked in yet.</p>
+    <p>You get one reminder a day, sometime in this window, and only if you haven't checked in yet.
+       GitHub decides the exact moment, so a wider window is more reliable. Five hours has worked well.</p>
     <div class="stack">
       <label>Time zone <input type="text" id="tzInput" autocomplete="off" spellcheck="false"></label>
-      <label>Daily reminder <select id="time1"></select></label>
-      <label>Nudge <select id="time2"></select></label>
+      <label>Earliest <select id="time1"></select></label>
+      <label>Latest <select id="time2"></select></label>
       <button class="btn primary" id="tzSave">Save schedule</button>
     </div>
     <div class="err" id="eTz"></div>
@@ -127,7 +128,7 @@
     <h2>6. Send a test</h2>
     <p>Open the <a id="actionsLink" target="_blank" rel="noopener">Daily reminder workflow</a>, click <b>Run workflow</b> → <b>Run workflow</b>.
        A test notification should arrive within a minute or two.</p>
-    <p class="muted">Daily reminders: <span id="times"></span>. GitHub often runs scheduled jobs 5–30 minutes late.</p>
+    <p class="muted">Daily reminder: <span id="times"></span>.</p>
   </section>
 </main>
 <div class="toast" id="toast" role="status"></div>
@@ -151,11 +152,11 @@ $("#tokenLink").href = "https://github.com/settings/personal-access-tokens/new";
 $("#secretLink").href = `${repoUrl()}/settings/secrets/actions/new`;
 $("#secretList").href = `${repoUrl()}/settings/secrets/actions`;
 $("#actionsLink").href = `${repoUrl()}/actions/workflows/remind.yml`;
-// ---- 3. schedule (reminders run on the half hour, so only :00 and :30 are offered)
+// ---- 3. schedule
 const fmtTime = (t) => new Date(`2000-01-01T${t}:00`).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 const halfHours = [...Array(48)].map((_, i) => `${String(Math.floor(i / 2)).padStart(2, "0")}:${i % 2 ? "30" : "00"}`);
 $("#time1").innerHTML = halfHours.map((t) => `<option value="${t}">${fmtTime(t)}</option>`).join("");
-$("#time2").innerHTML = `<option value="">No nudge</option>` + $("#time1").innerHTML;
+$("#time2").innerHTML = $("#time1").innerHTML;
 const deviceTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 async function refreshSchedule() {
@@ -164,19 +165,20 @@ async function refreshSchedule() {
   try { c = await readRepoConfig(); } catch (x) { return err("#eTz", x); }
   badge("#bTz", !!c.timezone, c.timezone ? "Set" : "Not set");
   $("#tzInput").value = c.timezone || deviceTz;
-  $("#time1").value = c.reminders[0] || "21:00";
-  $("#time2").value = c.reminders[1] || "";
+  const win = c.reminder_window || { start: "17:00", end: "22:00" };
+  $("#time1").value = win.start;
+  $("#time2").value = win.end;
   $("#times").textContent = c.timezone
-    ? `${c.reminders.map(fmtTime).join(" and ")} (${c.timezone})`
-    : "not scheduled yet. Finish step 3.";
+    ? `sometime between ${fmtTime(win.start)} and ${fmtTime(win.end)} (${c.timezone}), if you haven't checked in`
+    : "not scheduled yet. Finish step 3";
 }
 $("#tzSave").addEventListener("click", (e) => busy(e.target, async () => {
   err("#eTz");
   const tz = $("#tzInput").value.trim(), t1 = $("#time1").value, t2 = $("#time2").value;
   try { new Intl.DateTimeFormat("en", { timeZone: tz }); }
   catch { return err("#eTz", `"${tz}" isn't a time zone name. Use one like America/Denver or Europe/London.`); }
-  if (t2 && t2 <= t1) return err("#eTz", "The nudge should be later than the daily reminder.");
-  try { await saveSchedule(tz, t2 ? [t1, t2] : [t1]); toast("Schedule saved"); }
+  if (t2 <= t1) return err("#eTz", "Latest should be later than Earliest.");
+  try { await saveSchedule(tz, { start: t1, end: t2 }); toast("Schedule saved"); }
   catch (x) { err("#eTz", x); }
   await refreshSchedule();
 }));

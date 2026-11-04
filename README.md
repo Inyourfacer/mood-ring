@@ -3,7 +3,7 @@
 A private daily mental and physical health log that runs entirely on GitHub, with no server or computer that needs to stay on.
 
 - **The app** is a home-screen web app hosted on GitHub Pages, with a check-in form and a dashboard.
-- **Reminders** come from a scheduled GitHub Action that sends a normal iPhone notification at 9:00 PM, plus a nudge at 10:30 PM if you haven't checked in yet.
+- **Reminders** come from a scheduled GitHub Action that sends a normal iPhone notification sometime between 5:00 and 10:00 PM, only if you haven't checked in yet.
 - **Your data** is encrypted on your device with your passphrase (AES-256-GCM, PBKDF2-SHA256 with 600k iterations) and saved to `data/log.enc.json`. This repo is public, but it only ever holds ciphertext.
 
 ## What's public and what isn't
@@ -26,5 +26,5 @@ A private daily mental and physical health log that runs entirely on GitHub, wit
 ## Changing things
 
 - **Questions**: edit `config.json`. Types are `scale`, `number`, `tags`, `yesno` and `text`. Keep each `id` the same once it has data. Add `"lower_is_better": true` for measures like stress.
-- **Reminder times and time zone**: change them in step 3 of the Setup page. Times must end in :00 or :30.
-- **Timing**: GitHub often starts scheduled jobs 5–30 minutes late.
+- **Reminder window and time zone**: change them in step 3 of the Setup page.
+- **Timing**: GitHub runs scheduled jobs irregularly, so the reminder comes at the first run inside the window, not at an exact time. A day can still be missed if no run lands in the window.

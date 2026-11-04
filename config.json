@@ -1,9 +1,9 @@
 {
   "timezone": "America/Denver",
-  "reminders": [
-    "21:00",
-    "22:30"
-  ],
+  "reminder_window": {
+    "start": "17:00",
+    "end": "22:00"
+  },
   "day_rollover_hour": 4,
   "questions": [
     {

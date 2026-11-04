@@ -2,14 +2,17 @@ name: Daily reminder
 
 on:
   schedule:
-    # Checks every half hour. scripts/remind.mjs only sends when the slot matches a reminder
-    # time in config.json (in your time zone), so you never need to edit these lines.
-    - cron: "0 * * * *"
-    - cron: "30 * * * *"
+    # GitHub runs frequent schedules irregularly and drops many of them, so this checks often,
+    # away from the busy top of the hour. scripts/remind.mjs sends at most one reminder a day,
+    # on the first run inside the window in config.json.
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch: # "Run workflow" button = send a test notification now
 
 permissions:
-  contents: read
+  contents: write # to record that today's reminder was sent
+
+concurrency:
+  group: reminder
 
 jobs:
   remind:
@@ -28,7 +31,6 @@ jobs:
         run: node scripts/remind.mjs check
         env:
           EVENT: ${{ github.event_name }}
-          SCHEDULE: ${{ github.event.schedule }}
       - if: steps.check.outputs.send == 'true'
         run: npm install --no-audit --no-fund
       - if: steps.check.outputs.send == 'true'
@@ -36,3 +38,12 @@ jobs:
         env:
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           MESSAGE: ${{ steps.check.outputs.message }}
+      - if: steps.check.outputs.send == 'true' && github.event_name == 'schedule'
+        run: |
+          echo "${{ steps.check.outputs.day }}" > push/last-reminder.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add push/last-reminder.txt
+          git commit -m "Reminder sent for ${{ steps.check.outputs.day }}"
+          git pull --rebase origin main
+          git push
