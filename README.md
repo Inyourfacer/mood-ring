@@ -5,6 +5,8 @@ A private daily mental and physical health log that runs entirely on GitHub, wit
 - **The app** is a home-screen web app hosted on GitHub Pages, with a check-in form and a dashboard.
 - **Reminders** come from a scheduled GitHub Action that sends a normal iPhone notification sometime between 5:00 and 10:00 PM, only if you haven't checked in yet.
 - **Your data** is encrypted on your device with your passphrase (AES-256-GCM, PBKDF2-SHA256 with 600k iterations) and saved to `data/log.enc.json`. This repo is public, but it only ever holds ciphertext.
+- **A weekly review and an all-time summary** are worked out on your device. A notification on Monday morning says last week's review is ready.
+- **It works without a connection.** Check-ins are saved on the device and upload once it's back online and the app is open.
 
 ## What's public and what isn't
 

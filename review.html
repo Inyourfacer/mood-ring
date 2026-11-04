@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Check-in">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="stylesheet" href="common.css">
+<title>Your Review</title>
+<style>
+  body { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  main { max-width: 720px; margin: 0 auto; padding: 16px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 8px 0 16px; }
+  h1 { font-size: 26px; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin: 26px 0 10px; font-weight: 600; }
+  .nav { display: flex; gap: 8px; }
+  .seg { display: flex; background: var(--chip); border-radius: 10px; padding: 3px; margin-bottom: 16px; }
+  .seg button { flex: 1; border: 0; background: transparent; color: var(--ink-2); font: inherit; font-weight: 600;
+                padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+  .seg button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .week-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; }
+  .week-nav b { font-size: 17px; text-align: center; }
+  .week-nav button { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--card);
+                     color: var(--ink); font-size: 18px; cursor: pointer; }
+  .week-nav button:disabled { opacity: .35; cursor: default; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+  .tile, .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .tiles.three { grid-template-columns: repeat(3, 1fr); }
+  .tiles.three .tile { padding: 12px; }
+  .tiles.three .v { font-size: 24px; }
+  .tile .k { color: var(--ink-2); font-size: 13px; }
+  .tile .v { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .tile .v small { font-size: 15px; font-weight: 500; color: var(--ink-3); letter-spacing: 0; }
+  .tile .s { color: var(--ink-3); font-size: 12px; }
+  .strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; text-align: center; }
+  .strip .d { color: var(--ink-3); font-size: 12px; font-weight: 600; }
+  .strip .cell { height: 34px; border-radius: 6px; background: var(--seq-0); margin: 4px 0; }
+  .strip .n { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .cap { color: var(--ink-3); font-size: 12px; margin-top: 10px; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 9px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  th { color: var(--ink-3); font-weight: 600; font-size: 12px; }
+  td.n, th.n { text-align: right; white-space: nowrap; }
+  .scroll { overflow-x: auto; }
+  .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+  .day-card .lbl { color: var(--ink-3); font-size: 12px; font-weight: 600; }
+  .day-card .big { font-size: 18px; font-weight: 700; margin: 2px 0 4px; }
+  .day-card p { margin: 0; color: var(--ink-2); }
+  .pattern { font-size: 17px; font-weight: 600; }
+  .note { border-left: 2px solid var(--line); padding: 2px 0 2px 12px; margin-bottom: 10px; }
+  .note:last-child { margin-bottom: 0; }
+  .note .d { color: var(--ink-3); font-size: 12px; }
+  .bar-row { display: grid; grid-template-columns: 76px 1fr 44px; gap: 8px; align-items: center; padding: 5px 0; }
+  .bar-row .m { color: var(--ink-2); font-size: 14px; }
+  .bar-row .track { height: 12px; }
+  .bar-row .fill { height: 100%; background: var(--accent); border-radius: 0 4px 4px 0; }
+  .bar-row .val { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .empty { color: var(--ink-2); padding: 32px 0; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Your Review</h1>
+    <div class="nav"><a class="btn" href="dashboard.html">Dashboard</a><a class="btn primary" href="./">Check in</a></div>
+  </header>
+  <div id="notices"></div>
+  <div class="seg" role="tablist">
+    <button id="tabWeek" role="tab" class="on">Week</button>
+    <button id="tabAll" role="tab">All time</button>
+  </div>
+  <div id="app"><div class="loading">Loading…</div></div>
+</main>
+
+<script type="module">
+import { loadConfig, logicalToday, requireKey, loadEntries, registerServiceWorker, tokenWarning, pendingCount, isOffline, watchQueue } from "./app.js";
+import { addDays, mondayOf, moodQuestion, weekSummary, allTimeSummary } from "./stats.js";
+
+registerServiceWorker();
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const r1 = (x) => (x === null || x === undefined ? "–" : String(Math.round(x * 10) / 10));
+const fmt = (day, opts = { weekday: "short", month: "short", day: "numeric" }) => new Date(`${day}T12:00:00`).toLocaleDateString(undefined, opts);
+const shortDay = (day) => fmt(day, { month: "short", day: "numeric" });
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+let questions, entries, today, monday, view = location.hash === "#all" ? "all" : "week";
+
+// Monday's notification opens last week. On Sunday, this week is already complete.
+function defaultWeek() {
+  const current = mondayOf(today);
+  const lastWeekHasData = [...Array(7)].some((_, i) => entries[addDays(current, i - 7)]);
+  return new Date(`${today}T12:00:00Z`).getUTCDay() === 0 || !lastWeekHasData ? current : addDays(current, -7);
+}
+
+function patternCard(pattern, mood) {
+  if (!pattern) return "";
+  const label = mood?.id === "mood" ? "Mood" : esc(mood?.label || "");
+  let body;
+  if (pattern.needed) body = `<p class="cap" style="margin:0">No pattern yet. One can appear after ${plural(pattern.needed, "more day")} of check-ins.</p>`;
+  else if (pattern.none) body = `<p class="cap" style="margin:0">No habit stands out clearly yet.</p>`;
+  else {
+    body = `<div class="pattern">${label} averaged ${r1(Math.abs(pattern.diff))} ${pattern.diff > 0 ? "higher" : "lower"} on days with “${esc(pattern.habit)}”.</div>
+      <p class="cap">${plural(pattern.withCount, "day")} with it, ${plural(pattern.withoutCount, "day")} without. This shows a link, not a cause.</p>`;
+  }
+  return `<h2>A pattern</h2><div class="card">${body}</div>`;
+}
+
+function dayCards({ best, hardest }, mood) {
+  if (!best) return "";
+  const card = (title, x) => `<div class="card day-card"><div class="lbl">${title}</div>
+    <div class="big">${fmt(x.day)} · ${x.score}/${mood.max}</div>${x.note ? `<p>${esc(x.note)}</p>` : ""}</div>`;
+  return `<div class="pair">${card("Best day", best)}${card("Hardest day", hardest)}</div>`;
+}
+
+function renderWeek() {
+  const w = weekSummary(questions, entries, monday);
+  const mood = moodQuestion(questions);
+  const canPrev = Object.keys(entries).some((d) => d < monday);
+  const canNext = monday < mondayOf(today);
+  const metric = (id) => w.metrics.find((m) => m.q.id === id);
+  const sleep = metric("sleep_hours"), moodM = mood && metric(mood.id);
+  const isCurrent = monday === mondayOf(today);
+  const possible = isCurrent ? w.days.filter((d) => d <= today).length : 7;
+
+  const change = (m) => {
+    if (m.delta === null) return "–";
+    if (m.verdict === "same") return "Same";
+    return `${m.delta > 0 ? "▲" : "▼"} ${r1(Math.abs(m.delta))}, ${m.verdict}`;
+  };
+  let html = `<div class="week-nav">
+      <button id="prev" aria-label="Previous week" ${canPrev ? "" : "disabled"}>‹</button>
+      <b>${shortDay(w.days[0])} – ${shortDay(w.days[6])}${isCurrent ? " (so far)" : ""}</b>
+      <button id="next" aria-label="Next week" ${canNext ? "" : "disabled"}>›</button>
+    </div>`;
+  if (!w.logged.length) return html + `<div class="empty">No check-ins this week.</div>`;
+
+  html += `<div class="tiles three">
+      <div class="tile"><div class="k">Days logged</div><div class="v">${w.logged.length}<small> / ${possible}</small></div></div>
+      ${moodM ? `<div class="tile"><div class="k">Average mood</div><div class="v">${r1(moodM.avg)}<small> / ${mood.max}</small></div></div>` : ""}
+      ${sleep ? `<div class="tile"><div class="k">Average sleep</div><div class="v">${r1(sleep.avg)}<small> h</small></div></div>` : ""}
+    </div>`;
+  if (mood) {
+    const level = (v) => 1 + Math.round(5 * (v - mood.min) / (mood.max - mood.min));
+    html += `<h2>Mood each day</h2><div class="card"><div class="strip">${w.moodByDay.map((x) => `<div>
+        <div class="d">${fmt(x.day, { weekday: "short" })}</div>
+        <div class="cell" ${x.score !== null ? `style="background:var(--seq-${level(x.score)})"` : ""}></div>
+        <div class="n">${x.score ?? "–"}</div></div>`).join("")}</div>
+        <div class="cap">The number is your answer out of ${mood.max}. A dash means no answer.</div></div>`;
+  }
+  html += `<h2>Compared with the week before</h2><div class="card scroll"><table>
+      <thead><tr><th>Measure</th><th class="n">This week</th><th class="n">Before</th><th class="n">Change</th></tr></thead>
+      <tbody>${w.metrics.filter((m) => m.avg !== null).map((m) => `<tr><td>${esc(m.q.label)}</td><td class="n">${r1(m.avg)}${m.q.unit ? ` ${esc(m.q.unit)}` : ""}</td>
+        <td class="n">${r1(m.prevAvg)}</td><td class="n">${change(m)}</td></tr>`).join("")}</tbody></table>
+      <div class="cap">Daily averages.</div></div>`;
+  const cards = dayCards(w, mood);
+  if (cards) html += `<h2>Highs and lows</h2>${cards}`;
+  html += patternCard(w.pattern, mood);
+  if (w.notes.length) {
+    html += `<h2>Your notes</h2><div class="card">${w.notes.map((n) => `<div class="note"><div class="d">${fmt(n.day)}</div>${esc(n.note)}</div>`).join("")}</div>`;
+  }
+  return html;
+}
+
+function renderAll() {
+  const t = allTimeSummary(questions, entries, today);
+  if (!t) return `<div class="empty">No check-ins yet. <a href="./">Log your first one</a>.</div>`;
+  const mood = moodQuestion(questions);
+  const fmtMonth = (m) => new Date(`${m}-15T12:00:00`).toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  const longest = t.longest.length > 1 ? `${shortDay(t.longest.start)} – ${shortDay(t.longest.end)}` : shortDay(t.longest.start);
+  let html = `<div class="tiles">
+      <div class="tile"><div class="k">Total check-ins</div><div class="v">${t.count}</div><div class="s">since ${fmt(t.first, { month: "short", day: "numeric", year: "numeric" })}</div></div>
+      <div class="tile"><div class="k">Days logged</div><div class="v">${Math.round(100 * t.count / t.span)}<small>%</small></div><div class="s">${t.count} of ${plural(t.span, "day")}</div></div>
+      <div class="tile"><div class="k">Current streak</div><div class="v">${t.current}</div><div class="s">${t.current === 1 ? "day" : "days"} in a row</div></div>
+      <div class="tile"><div class="k">Longest streak</div><div class="v">${t.longest.length}</div><div class="s">${longest}</div></div>
+    </div>`;
+  html += `<h2>Your averages</h2><div class="card scroll"><table>
+      <thead><tr><th>Measure</th><th class="n">Average</th><th class="n">Total</th></tr></thead>
+      <tbody>${t.metrics.filter((m) => m.count).map((m) => `<tr><td>${esc(m.q.label)}</td>
+        <td class="n">${r1(m.avg)}${m.q.unit ? ` ${esc(m.q.unit)}` : ""}</td>
+        <td class="n">${m.q.type === "number" ? `${r1(m.total)}${m.q.unit ? ` ${esc(m.q.unit)}` : ""}` : "–"}</td></tr>`).join("")}</tbody></table></div>`;
+  const months = t.months.filter((m) => m.moodAvg !== null);
+  if (mood && months.length) {
+    html += `<h2>Average mood by month</h2><div class="card">${months.map((m) => `<div class="bar-row" title="${plural(m.count, "check-in")}">
+        <div class="m">${fmtMonth(m.month)}</div>
+        <div class="track"><div class="fill" style="width:${100 * m.moodAvg / mood.max}%"></div></div>
+        <div class="val">${r1(m.moodAvg)}</div></div>`).join("")}</div>`;
+  }
+  const cards = dayCards(t, mood);
+  if (cards) html += `<h2>Highs and lows</h2>${cards}`;
+  html += patternCard(t.pattern, mood);
+  if (t.habits.length) {
+    html += `<h2>Habits</h2><div class="card scroll"><table>
+        <thead><tr><th>Habit</th><th class="n">Days</th><th class="n">Share</th><th class="n">Mood difference</th></tr></thead>
+        <tbody>${t.habits.map((h) => `<tr><td>${esc(h.habit)}</td><td class="n">${h.count}</td><td class="n">${Math.round(h.share * 100)}%</td>
+          <td class="n">${h.diff === null ? "–" : `${h.diff >= 0 ? "+" : "−"}${r1(Math.abs(h.diff))}`}</td></tr>`).join("")}</tbody></table>
+        <div class="cap">Average mood on days with the habit minus days without it. It needs at least 4 days of each. This shows a link, not a cause.</div></div>`;
+  }
+  return html;
+}
+
+function render() {
+  $("#tabWeek").classList.toggle("on", view === "week");
+  $("#tabAll").classList.toggle("on", view === "all");
+  $("#app").innerHTML = view === "week" ? renderWeek() : renderAll();
+  $("#prev")?.addEventListener("click", () => { monday = addDays(monday, -7); render(); });
+  $("#next")?.addEventListener("click", () => { monday = addDays(monday, 7); render(); });
+}
+$("#tabWeek").addEventListener("click", () => { view = "week"; render(); });
+$("#tabAll").addEventListener("click", () => { view = "all"; render(); });
+
+async function renderNotices() {
+  const pending = await pendingCount(), warning = tokenWarning(), lines = [];
+  if (pending) lines.push(`${pending === 1 ? "1 check-in is" : `${pending} check-ins are`} saved on this device, waiting to upload. They're included below.`);
+  else if (isOffline()) lines.push("You're offline. This is your last downloaded data.");
+  if (warning) lines.push(`${warning} <a href="setup.html">Open Setup</a>`);
+  $("#notices").innerHTML = lines.map((l) => `<div class="banner">${l}</div>`).join("");
+}
+
+(async () => {
+  try {
+    const cfg = await loadConfig();
+    questions = cfg.questions; today = logicalToday(cfg);
+    const key = await requireKey();
+    if (!key) { $("#app").innerHTML = `<div class="banner">Not set up yet. <a href="setup.html">Open Setup</a>.</div>`; return; }
+    entries = await loadEntries(key);
+    monday = defaultWeek();
+    render();
+    await renderNotices();
+    watchQueue(key, renderNotices);
+  } catch (e) {
+    $("#app").innerHTML = "";
+    $("#app").append(Object.assign(document.createElement("div"), { className: "banner", textContent: e.message }));
+  }
+})();
+</script>
+</body>
+</html>

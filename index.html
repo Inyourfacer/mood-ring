@@ -61,6 +61,7 @@
       <a class="icon-btn" href="setup.html" aria-label="Setup" title="Setup">⚙</a>
     </div>
   </header>
+  <div id="notices"></div>
   <div class="status" id="status"></div>
   <div id="form"><div class="loading">Loading…</div></div>
 </main>
@@ -71,7 +72,8 @@
 <div class="toast" id="toast" role="status"></div>
 
 <script type="module">
-import { loadConfig, logicalToday, ymd, token, requireKey, loadEntries, saveEntry, registerServiceWorker } from "./app.js";
+import { loadConfig, logicalToday, ymd, token, requireKey, loadEntries, saveEntry, registerServiceWorker,
+         tokenWarning, pendingCount, isOffline, watchQueue } from "./app.js";
 
 registerServiceWorker();
 const $ = (s) => document.querySelector(s);
@@ -153,6 +155,16 @@ function show(d) {
   render();
 }
 
+async function renderNotices() {
+  const pending = await pendingCount();
+  const lines = [];
+  if (pending) lines.push(`${pending === 1 ? "1 check-in is" : `${pending} check-ins are`} saved on this device, waiting to upload.`);
+  else if (isOffline()) lines.push("You're offline. You can still check in; it will upload when you're back online.");
+  const warning = tokenWarning();
+  if (warning) lines.push(`${warning} <a href="setup.html">Open Setup</a>`);
+  $("#notices").innerHTML = lines.map((l) => `<div class="banner">${l}</div>`).join("");
+}
+
 function toast(msg, ms = 2200) {
   const t = $("#toast"); t.textContent = msg; t.classList.add("show");
   setTimeout(() => t.classList.remove("show"), ms);
@@ -162,10 +174,26 @@ $("#save").addEventListener("click", async () => {
   const clean = Object.fromEntries(Object.entries(answers).filter(([, v]) => v !== undefined && v !== ""));
   $("#save").disabled = true; $("#save").textContent = "Saving…";
   try {
-    entries = await saveEntry(key, date, clean);
-    toast("Saved ✓");
-    $("#status").textContent = "Logged. Nice work.";
+    const result = await saveEntry(key, date, clean);
+    entries[date] = result.entry;
+    const logged = () => {
+      const sunday = date === today && new Date(`${date}T12:00:00`).getDay() === 0;
+      $("#status").innerHTML = sunday ? `Logged. Nice work. <a href="review.html">See your week</a>` : "Logged. Nice work.";
+    };
+    if (result.pending) {
+      toast("Saved on this device");
+      $("#status").textContent = "Saved on this device. It will upload automatically when it can.";
+      const savedDate = date;
+      result.done.then(async (r) => {
+        if (!r.pending && date === savedDate) logged();
+        await renderNotices();
+      });
+    } else {
+      toast("Saved ✓");
+      logged();
+    }
   } catch (e) { toast(e.message, 5000); }
+  await renderNotices();
   $("#save").disabled = false;
   $("#save").textContent = entries[date] ? "Update check-in" : "Save check-in";
 });
@@ -190,6 +218,8 @@ $("#next").addEventListener("click", () => show(shift(date, 1)));
     entries = await loadEntries(key);
     $("#save").disabled = false;
     show(new URLSearchParams(location.search).get("date") || today);
+    await renderNotices();
+    watchQueue(key, () => renderNotices());
   } catch (e) {
     $("#form").innerHTML = "";
     $("#form").append(Object.assign(document.createElement("div"), { className: "banner", textContent: e.message }));

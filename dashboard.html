@@ -73,16 +73,18 @@
         <button data-d="90">90d</button><button data-d="365">1y</button><button data-d="0">All</button>
       </div>
       <button class="btn" id="export">Export CSV</button>
+      <a class="btn" href="review.html">Review</a>
       <a class="btn" href="setup.html">Setup</a>
       <a class="btn primary" href="./">Check in</a>
     </div>
   </header>
+  <div id="notices"></div>
   <div id="app"></div>
 </main>
 <div id="tip"></div>
 
 <script type="module">
-import { loadConfig, logicalToday, requireKey, loadEntries, registerServiceWorker } from "./app.js";
+import { loadConfig, logicalToday, requireKey, loadEntries, registerServiceWorker, tokenWarning, pendingCount, isOffline, watchQueue } from "./app.js";
 registerServiceWorker();
 const $ = (s) => document.querySelector(s);
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
@@ -269,6 +271,15 @@ $("#app").innerHTML = `<div class="loading">Loading…</div>`;
     data = { questions: cfg.questions, today: logicalToday(cfg),
              entries: Object.keys(entries).sort().map(date => ({ date, answers: entries[date].answers })) };
     render();
+    const notices = async () => {
+      const pending = await pendingCount(), warning = tokenWarning(), lines = [];
+      if (pending) lines.push(`${pending === 1 ? "1 check-in is" : `${pending} check-ins are`} saved on this device, waiting to upload. They're included below.`);
+      else if (isOffline()) lines.push("You're offline. This is your last downloaded data.");
+      if (warning) lines.push(`${warning} <a href="setup.html">Open Setup</a>`);
+      $("#notices").innerHTML = lines.map(l => `<div class="banner">${l}</div>`).join("");
+    };
+    await notices();
+    watchQueue(key, notices);
   } catch (e) {
     $("#app").innerHTML = "";
     $("#app").append(Object.assign(document.createElement("div"), { className: "banner", textContent: e.message }));

@@ -30,6 +30,8 @@
   .secret { display: block; padding: 10px; user-select: all; }
   .muted { color: var(--ink-3); font-size: 14px; }
   .hide { display: none !important; }
+  input[type=date] { flex: 1; min-width: 150px; height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px;
+                     background: var(--bg); color: var(--ink); font: inherit; }
   .stack label { display: grid; gap: 4px; color: var(--ink-2); font-size: 14px; font-weight: 600; }
   select { height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
            color: var(--ink); font: inherit; }
@@ -50,12 +52,21 @@
         The GitHub app can't make tokens.</span></li>
       <li><b>Repository access:</b> Only select repositories → <b id="repoName"></b>.</li>
       <li><b>Permissions → Repository → Contents:</b> Read and write. Nothing else.</li>
-      <li><b>Expiration:</b> the longest option offered. Generate it and paste it here.</li>
+      <li><b>Expiration:</b> the longest option offered. Generate it, paste it here, and note the date it expires.</li>
     </ol>
     <div class="row"><input type="password" id="tokenInput" placeholder="github_pat_…" autocomplete="off">
       <button class="btn primary" id="tokenSave">Save</button></div>
     <div class="err" id="e1"></div>
-    <div class="row hide" id="tokenDone"><button class="btn" id="tokenClear">Remove token from this device</button></div>
+    <div class="hide" id="tokenDone">
+      <p>GitHub doesn't let apps read a token's expiry date, so enter it here and this device will warn you two weeks before.
+         It's on <a id="tokenList" target="_blank" rel="noopener">your tokens page</a>.</p>
+      <div class="row">
+        <input type="date" id="tokenExp" aria-label="Token expiry date">
+        <button class="btn" id="tokenExpSave">Save date</button>
+        <button class="btn" id="tokenNever">It doesn't expire</button>
+      </div>
+      <div class="row"><button class="btn" id="tokenClear">Remove token from this device</button></div>
+    </div>
   </section>
 
   <section class="step">
@@ -136,7 +147,7 @@
 <script type="module">
 import { repo, repoUrl, token, checkRepoAccess, getKeyInfo, createVault, unlock, isUnlocked, forgetKey,
          readVapidPublic, writeFile, readFile, VAPID_PUBLIC, addSubscription, toB64url, fromB64url,
-         readRepoConfig, saveSchedule, registerServiceWorker } from "./app.js";
+         readRepoConfig, saveSchedule, registerServiceWorker, tokenWarning, isTokenRejected } from "./app.js";
 
 registerServiceWorker();
 const $ = (s) => document.querySelector(s);
@@ -149,6 +160,7 @@ async function busy(btn, fn) { btn.disabled = true; try { await fn(); } finally 
 $("#repoLine").textContent = `Repo: ${repo.owner}/${repo.name}`;
 $("#repoName").textContent = repo.name;
 $("#tokenLink").href = "https://github.com/settings/personal-access-tokens/new";
+$("#tokenList").href = "https://github.com/settings/personal-access-tokens";
 $("#secretLink").href = `${repoUrl()}/settings/secrets/actions/new`;
 $("#secretList").href = `${repoUrl()}/settings/secrets/actions`;
 $("#actionsLink").href = `${repoUrl()}/actions/workflows/remind.yml`;
@@ -186,8 +198,11 @@ $("#tzSave").addEventListener("click", (e) => busy(e.target, async () => {
 // ---- 1. token
 async function refreshToken() {
   const has = !!token.get();
-  badge("#b1", has, has ? "Connected" : "Not connected");
+  const warning = tokenWarning(), expiry = token.getExpiry(), needsDate = has && !expiry && !isTokenRejected();
+  badge("#b1", has && !warning, !has ? "Not connected" : needsDate ? "Add expiry date" : warning ? "Needs attention" : "Connected");
   show("#tokenDone", has);
+  $("#tokenExp").value = expiry && expiry !== "never" ? expiry : "";
+  if (warning && !needsDate) err("#e1", warning);
   $("#tokenInput").placeholder = has ? "Saved. Paste a new one to replace it" : "github_pat_…";
 }
 $("#tokenSave").addEventListener("click", (e) => busy(e.target, async () => {
@@ -200,7 +215,12 @@ $("#tokenSave").addEventListener("click", (e) => busy(e.target, async () => {
   catch (x) { old ? token.set(old) : token.clear(); err("#e1", x); }
   await refreshAll();
 }));
-$("#tokenClear").addEventListener("click", async () => { token.clear(); await refreshAll(); });
+$("#tokenExpSave").addEventListener("click", async () => {
+  if (!$("#tokenExp").value) return err("#e1", "Pick the date first.");
+  err("#e1"); token.setExpiry($("#tokenExp").value); toast("Date saved"); await refreshToken();
+});
+$("#tokenNever").addEventListener("click", async () => { err("#e1"); token.setExpiry("never"); toast("Saved"); await refreshToken(); });
+$("#tokenClear").addEventListener("click", async () => { err("#e1"); token.clear(); await refreshAll(); });
 
 // ---- 2. passphrase
 async function refreshPass() {
@@ -310,8 +330,8 @@ $("#pushOn").addEventListener("click", async (e) => {
 });
 
 async function refreshAll() {
-  await refreshToken();
   await Promise.all([refreshPass(), refreshVapid(false), refreshSchedule()]);
+  await refreshToken(); // after the reads above, which reveal a rejected token
   refreshPush().catch((x) => err("#e4", x));
 }
 refreshAll();

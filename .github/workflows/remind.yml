@@ -38,12 +38,17 @@ jobs:
         env:
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           MESSAGE: ${{ steps.check.outputs.message }}
-      - if: steps.check.outputs.send == 'true' && github.event_name == 'schedule'
+      - if: steps.check.outputs.send == 'true' && steps.check.outputs.record_file != ''
         run: |
-          echo "${{ steps.check.outputs.day }}" > push/last-reminder.txt
+          mkdir -p push
+          echo "$RECORD_VALUE" > "$RECORD_FILE"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add push/last-reminder.txt
-          git commit -m "Reminder sent for ${{ steps.check.outputs.day }}"
+          git add "$RECORD_FILE"
+          git commit -m "$RECORD_COMMIT"
           git pull --rebase origin main
           git push
+        env:
+          RECORD_FILE: ${{ steps.check.outputs.record_file }}
+          RECORD_VALUE: ${{ steps.check.outputs.record_value }}
+          RECORD_COMMIT: ${{ steps.check.outputs.record_commit }}

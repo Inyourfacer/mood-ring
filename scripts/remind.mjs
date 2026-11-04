@@ -6,6 +6,9 @@
 // GitHub starts scheduled jobs irregularly, so reminders aren't tied to an exact time. The first
 // run inside reminder_window (config.json, your time zone) sends one reminder, unless you've
 // already checked in. push/last-reminder.txt records the day so later runs don't send it again.
+//
+// Each Monday morning it also says last week's review is ready. That waits until Monday because
+// Sunday's check-in often comes in late at night. push/last-weekly.txt records the week.
 import fs from "node:fs";
 import { execFileSync } from "node:child_process";
 
@@ -28,9 +31,22 @@ function logicalToday() {
   return l.hour < (cfg.day_rollover_hour ?? 4) ? local(new Date(now - 86400000)).date : l.date;
 }
 
-function checkedInToday() {
+function checkIns() {
   const subjects = execFileSync("git", ["log", "-200", "--format=%s", "--", "data/log.enc.json"], { encoding: "utf8" });
-  return subjects.split("\n").includes(`Check-in for ${logicalToday()}`);
+  return subjects.split("\n").filter((s) => s.startsWith("Check-in for ")).map((s) => s.slice(13));
+}
+
+const addDays = (day, n) => new Date(Date.parse(`${day}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+
+// Monday between 8 AM and 10 PM, once, if there's at least one check-in from last week to review.
+function weeklyReview() {
+  const { date, time } = local(now);
+  if (new Date(`${date}T12:00:00Z`).getUTCDay() !== 1 || time < "08:00" || time >= "22:00") return null;
+  const week = addDays(date, -7);
+  if (readOr("push/last-weekly.txt", "").trim() === week) return null;
+  if (!checkIns().some((d) => d >= week && d < date)) return null;
+  return { title: "Your week is ready", body: "See how last week went.", path: "review.html", tag: "review",
+           record: { file: "push/last-weekly.txt", value: week, commit: `Weekly review sent for ${week}` } };
 }
 
 function decide() {
@@ -38,19 +54,23 @@ function decide() {
     return { title: "Test notification", body: "Reminders are working. Tap to open your check-in." };
   }
   if (!cfg.timezone) return console.log("No time zone set yet. Open the Setup page, step 3."), null;
+  const review = weeklyReview();
+  if (review) return review; // the next run still handles the daily reminder
   const { start, end } = cfg.reminder_window || { start: "17:00", end: "22:00" };
   const time = local(now).time, day = logicalToday();
   if (time < start || time >= end) return console.log(`${time} in ${cfg.timezone} is outside the ${start}-${end} window.`), null;
   if (readOr("push/last-reminder.txt", "").trim() === day) return console.log(`Already reminded for ${day}.`), null;
-  if (checkedInToday()) return console.log(`Already checked in for ${day}.`), null;
-  return { title: "Daily health check-in", body: "How was today? Tap to log it.", day };
+  if (checkIns().includes(day)) return console.log(`Already checked in for ${day}.`), null;
+  return { title: "Daily health check-in", body: "How was today? Tap to log it.",
+           record: { file: "push/last-reminder.txt", value: day, commit: `Reminder sent for ${day}` } };
 }
 
 if (mode === "check") {
   const message = decide();
   const out = process.env.GITHUB_OUTPUT;
   if (message) console.log(`Will send: ${message.title}`);
-  if (out) fs.appendFileSync(out, `send=${!!message}\nday=${message?.day || ""}\nmessage=${JSON.stringify(message)}\n`);
+  const record = message?.record || {};
+  if (out) fs.appendFileSync(out, `send=${!!message}\nrecord_file=${record.file || ""}\nrecord_value=${record.value || ""}\nrecord_commit=${record.commit || ""}\nmessage=${JSON.stringify(message)}\n`);
   process.exit(0);
 }
 
@@ -73,7 +93,7 @@ const [owner, repo] = (process.env.GITHUB_REPOSITORY || "owner/repo").split("/")
 const appUrl = `https://${owner.toLowerCase()}.github.io/${repo}/`;
 webpush.setVapidDetails(appUrl, publicKey, process.env.VAPID_PRIVATE_KEY);
 
-const payload = JSON.stringify({ title: message.title, body: message.body, url: appUrl });
+const payload = JSON.stringify({ title: message.title, body: message.body, tag: message.tag, url: appUrl + (message.path || "") });
 let ok = 0;
 for (const sub of subs) {
   const host = new URL(sub.endpoint).host;

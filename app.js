@@ -26,12 +26,40 @@ export const repo = (() => {
 })();
 const API = store.get("api_base") || "https://api.github.com";
 const TOKEN_KEY = `gh_token:${repo.owner}/${repo.name}`;
+const EXPIRY_KEY = `gh_token_expires:${repo.owner}/${repo.name}`;
 
 export const token = {
   get: () => store.get(TOKEN_KEY),
-  set: (v) => store.set(TOKEN_KEY, v.trim()),
-  clear: () => store.del(TOKEN_KEY),
+  // A new token has its own expiry date, so replacing one clears the old date.
+  set: (v) => { store.set(TOKEN_KEY, v.trim()); store.del(EXPIRY_KEY); },
+  clear: () => { store.del(TOKEN_KEY); store.del(EXPIRY_KEY); },
+  // "YYYY-MM-DD", "never", or null if not entered. GitHub doesn't let browser apps read this.
+  getExpiry: () => store.get(EXPIRY_KEY),
+  setExpiry: (v) => store.set(EXPIRY_KEY, v),
 };
+
+let tokenRejected = false;
+const WARN_DAYS = 14;
+export const isTokenRejected = () => tokenRejected;
+
+export function daysUntil(day) {
+  return Math.ceil((new Date(`${day}T23:59:59`) - new Date()) / 86400000) - 1;
+}
+
+// Returns a warning about this device's token, or null if there's nothing to say.
+export function tokenWarning() {
+  if (!token.get()) return null;
+  const expiry = token.getExpiry();
+  const days = expiry && expiry !== "never" ? daysUntil(expiry) : null;
+  if (tokenRejected || (days !== null && days < 0)) {
+    return "Your GitHub token has expired or stopped working. Your check-ins stay safe on this device until you add a new token in Setup.";
+  }
+  if (days !== null && days <= WARN_DAYS) {
+    return `Your GitHub token on this device expires ${days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`}. Make a new one in Setup before then.`;
+  }
+  if (!expiry) return "Add your token's expiry date in Setup so you get a warning before it stops working.";
+  return null;
+}
 
 export function toB64(bytes) {
   let s = "";
@@ -65,12 +93,28 @@ export function registerServiceWorker() {
 
 // ---------- GitHub contents API ----------
 
-async function gh(path, opts = {}) {
-  const headers = { Accept: "application/vnd.github+json" };
-  const t = token.get();
-  if (t) headers.Authorization = `Bearer ${t}`;
-  if (opts.body) headers["Content-Type"] = "application/json";
-  return fetch(`${API}/repos/${repo.owner}/${repo.name}${path}`, { ...opts, headers, cache: "no-store" });
+async function gh(path, { strict, ...opts } = {}) {
+  const send = async (withToken) => {
+    const headers = { Accept: "application/vnd.github+json" };
+    const t = withToken && token.get();
+    if (t) headers.Authorization = `Bearer ${t}`;
+    if (opts.body) headers["Content-Type"] = "application/json";
+    const ctl = new AbortController();
+    // Short for reads, so a weak signal falls back to this device's copy quickly.
+    const timer = setTimeout(() => ctl.abort(), opts.method ? 20000 : 6000);
+    try {
+      return await fetch(`${API}/repos/${repo.owner}/${repo.name}${path}`, { ...opts, headers, cache: "no-store", signal: ctl.signal });
+    } catch {
+      throw Object.assign(new Error("Can't reach GitHub right now."), { network: true });
+    } finally { clearTimeout(timer); }
+  };
+  const r = await send(true);
+  if (r.status === 401 && token.get()) {
+    tokenRejected = true;
+    // The repo is public, so an expired token shouldn't stop you from reading your own log.
+    if (!strict && !opts.method) return send(false);
+  } else if (r.ok && token.get()) tokenRejected = false;
+  return r;
 }
 
 async function failure(r) {
@@ -82,7 +126,7 @@ async function failure(r) {
 }
 
 export async function checkRepoAccess() {
-  const r = await gh("");
+  const r = await gh("", { strict: true });
   if (!r.ok) throw await failure(r);
   // Probe write access without committing anything: an empty PUT fails validation (422) when the
   // token may write, but is refused (403/404) when it can only read.
@@ -175,8 +219,18 @@ const KEY_SLOT = `key:${repo.owner}/${repo.name}`;
 let cachedKey = null;
 
 export async function getKeyInfo() {
-  const f = await readFile(KEYINFO);
-  return f ? JSON.parse(f.text) : null;
+  const slot = `keyinfo:${repo.owner}/${repo.name}`;
+  const fetchInfo = async () => {
+    const f = await readFile(KEYINFO);
+    const info = f ? JSON.parse(f.text) : null;
+    if (info) await idbSet(slot, info);
+    return info;
+  };
+  // This rarely changes, so use this device's copy right away and refresh it in the background.
+  const cached = await idbGet(slot);
+  if (!cached) return fetchInfo();
+  fetchInfo().catch(() => {});
+  return cached;
 }
 
 async function rememberedKey(info) {
@@ -253,22 +307,108 @@ function askPassphrase(info) {
 // ---------- the log ----------
 
 // entries = { "YYYY-MM-DD": { answers: {...}, updated_at } }
+//
+// Every save goes into an on-device queue first (encrypted with the same key) and is removed only
+// once GitHub has it, so nothing is lost without signal or with an expired token.
+const QUEUE_SLOT = `queue:${repo.owner}/${repo.name}`;
+const LOG_SLOT = `log:${repo.owner}/${repo.name}`;
+let memQueue = null;
+let offline = false;
+let flushing = null;
+
+export const isOffline = () => offline;
+
+async function readQueue() {
+  memQueue ||= (await idbGet(QUEUE_SLOT)) || {};
+  return memQueue;
+}
+
+async function writeQueue() {
+  await idbSet(QUEUE_SLOT, memQueue);
+}
+
+export async function pendingCount() {
+  return Object.keys(await readQueue()).length;
+}
+
+// Newest save wins, so a check-in queued days ago can't overwrite a later edit from another device.
+const applyEntry = (entries, date, entry) => {
+  if (!entries[date] || entries[date].updated_at <= entry.updated_at) entries[date] = entry;
+};
+
 export async function loadEntries(key) {
-  const f = await readFile(LOG);
-  if (!f) return {};
-  return (await unseal(key, JSON.parse(f.text))).entries;
+  let box = null;
+  try {
+    const f = await readFile(LOG);
+    box = f ? JSON.parse(f.text) : null;
+    if (box) await idbSet(LOG_SLOT, box);
+    offline = false;
+  } catch (e) {
+    if (!e.network) throw e;
+    box = await idbGet(LOG_SLOT);
+    offline = true;
+  }
+  const entries = box ? (await unseal(key, box)).entries : {};
+  const queue = await readQueue();
+  for (const date of Object.keys(queue)) {
+    try { applyEntry(entries, date, await unseal(key, queue[date])); } catch {}
+  }
+  return entries;
+}
+
+async function uploadQueue(key) {
+  const queue = await readQueue();
+  for (const date of Object.keys(queue).sort()) {
+    const queued = queue[date];
+    let entry;
+    try { entry = await unseal(key, queued); } catch { continue; } // sealed with an older passphrase
+    try {
+      // The reminder job looks for this exact commit message to know you've checked in.
+      await updateJSON(LOG, `Check-in for ${date}`, async (box) => {
+        const entries = box ? (await unseal(key, box)).entries : {};
+        applyEntry(entries, date, entry);
+        const sealed = await seal(key, { entries });
+        await idbSet(LOG_SLOT, sealed);
+        return JSON.stringify(sealed);
+      });
+      offline = false;
+      if (queue[date] === queued) delete queue[date]; // unless it was edited during the upload
+      await writeQueue();
+    } catch (e) {
+      if (e.network) offline = true;
+      return { pending: await pendingCount(), error: e };
+    }
+  }
+  return { pending: await pendingCount() };
+}
+
+// Tries to upload anything waiting on this device.
+export function flushQueue(key) {
+  flushing ||= uploadQueue(key).finally(() => { flushing = null; });
+  return flushing;
 }
 
 export async function saveEntry(key, date, answers) {
-  let saved;
-  // The commit message is the only plain-text trace of a check-in; the reminder job uses it to skip nudges.
-  await updateJSON(LOG, `Check-in for ${date}`, async (box) => {
-    const entries = box ? (await unseal(key, box)).entries : {};
-    entries[date] = { answers, updated_at: new Date().toISOString() };
-    saved = entries;
-    return JSON.stringify(await seal(key, { entries }));
-  });
-  return saved;
+  const entry = { answers, updated_at: new Date().toISOString() };
+  const queue = await readQueue();
+  queue[date] = await seal(key, entry);
+  await writeQueue();
+  // An upload already running wouldn't include this save, so wait for it first.
+  const done = Promise.resolve(flushing).then(() => flushQueue(key));
+  // It's safe on the device now, so a slow connection shouldn't keep you waiting for the upload.
+  const slow = new Promise((res) => setTimeout(() => res({ pending: 1 }), 5000));
+  return { entry, done, ...(await Promise.race([done, slow])) };
+}
+
+// Uploads waiting check-ins whenever the app comes back online or back on screen.
+export function watchQueue(key, onChange) {
+  const run = async () => {
+    if (document.visibilityState === "hidden" || !(await pendingCount())) return;
+    onChange(await flushQueue(key));
+  };
+  addEventListener("online", run);
+  document.addEventListener("visibilitychange", run);
+  return run();
 }
 
 // ---------- push ----------
